@@ -139,7 +139,7 @@ def _do_ingest() -> None:
         # Optional post-ingest delivery hook. The hook is an executable on the
         # container's filesystem (usually dropped in via the bind volume) that
         # receives the freshly-built PDF path as its single argument. Useful
-        # for SCP-ing to a reMarkable, mailing it somewhere, printing, etc.
+        # for SCP-ing to a Boox Note, mailing it somewhere, printing, etc.
         hook = os.environ.get("POST_INGEST_HOOK", "").strip()
         if hook:
             try:
@@ -282,7 +282,7 @@ _LANDING_HTML = """<!doctype html>
 </head>
 <body>
   <h1>papernews</h1>
-  <p class="sub">A curated PDF you read on your reMarkable, not in a browser.</p>
+  <p class="sub">A curated PDF you read on your Boox Note, not in a browser.</p>
   <img class="cover" src="/preview.png" alt="Cover preview">
   <p><a class="cta" href="/digest.pdf">Read today (PDF)</a></p>
   <p class="meta">Updated automatically every few hours. <a href="/sources">Sources</a>.</p>
