@@ -13,6 +13,8 @@ dependencies = [
     "gunicorn>=21.2",
     "google-genai>=0.2.0",
     "httpx>=0.27",
+    "chromadb>=0.4.0",
+    "pypdf>=4.0.0",
 ]
 
 # LLM backend is selected via LLM_BACKEND env var ("gemini" or "ollama").
