@@ -104,7 +104,7 @@
 \small
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{0.15em}
-\begin{multicols}{3}
+\begin{multicols}{2}
 ((* for item in decorations.world_news *))
 \noindent\parbox[t]{\linewidth}{\raggedright ((* if item.url *))\href{((( item.url | texurl )))}{((( item.text | tex )))}((* else *))((( item.text | tex )))((* endif *)) ((* if item.source *)){\scriptsize\itshape (((( item.source | tex ))))}((* endif *))}\par\vspace{0.35em}
 ((* endfor *))
@@ -140,7 +140,7 @@
   \noindent\hyperlink{#1}{#2}#3\par
 }
 
-\begin{multicols}{3}
+\begin{multicols}{2}
 ((* set ns = namespace(prev='') *))
 ((* for art in articles *))
 ((* if art.source != ns.prev *))
@@ -198,7 +198,7 @@
 \articlelede{((( art.summary | tex )))}
 
 ((* if art.text | length > 2000 *))
-\begin{multicols}{3}
+\begin{multicols}{2}
 \sloppy
 ((( art.text | body ))) %
 \end{multicols}

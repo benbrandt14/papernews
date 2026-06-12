@@ -439,7 +439,7 @@ Everything visual lives in one file: [`papernews/template.tex.j2`](papernews/tem
 
 - Page size: `paperwidth=203mm, paperheight=270mm` (tuned for Boox Note Max)
 - Body font: Latin Modern Roman 11pt
-- Three-column body for any article over 2000 characters; single-column
+- Two-column body for any article over 2000 characters; single-column
   otherwise
 - First-line paragraph indent instead of vertical `\parskip` (classic
   magazine convention)
