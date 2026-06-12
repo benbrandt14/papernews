@@ -437,9 +437,9 @@ Requirements: Python 3.11+, `xelatex` (TeX Live with `texlive-xetex`,
 
 Everything visual lives in one file: [`papernews/template.tex.j2`](papernews/template.tex.j2).
 
-- Page size: `paperwidth=140mm, paperheight=210mm` (tuned for Boox Note)
-- Body font: Latin Modern Roman 10pt
-- Two-column body for any article over 2000 characters; single-column
+- Page size: `paperwidth=203mm, paperheight=270mm` (tuned for Boox Note Max)
+- Body font: Latin Modern Roman 11pt
+- Three-column body for any article over 2000 characters; single-column
   otherwise
 - First-line paragraph indent instead of vertical `\parskip` (classic
   magazine convention)

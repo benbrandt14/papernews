@@ -1,12 +1,12 @@
-\documentclass[10pt]{article}
+\documentclass[11pt]{article}
 
 \usepackage[
-  paperwidth=140mm,
-  paperheight=210mm,
-  inner=14mm,
-  outer=14mm,
-  top=18mm,
-  bottom=18mm
+  paperwidth=203mm,
+  paperheight=270mm,
+  inner=20mm,
+  outer=20mm,
+  top=24mm,
+  bottom=24mm
 ]{geometry}
 
 \usepackage{fontspec}
@@ -82,7 +82,7 @@
 % --- Contents (also the cover) --------------------------------------------
 \thispagestyle{empty}
 \begin{center}
-{\fontsize{28}{32}\selectfont\bfseries Papernews}\par
+{\fontsize{36}{42}\selectfont\bfseries Papernews}\par
 \vspace{0.7em}
 {\normalsize ((( date | tex )))\quad\textperiodcentered\quad ((( articles | length ))) article((* if articles|length != 1 *))s((* endif *))}\par
 \end{center}
@@ -104,7 +104,7 @@
 \small
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{0.15em}
-\begin{multicols}{2}
+\begin{multicols}{3}
 ((* for item in decorations.world_news *))
 \noindent\parbox[t]{\linewidth}{\raggedright ((* if item.url *))\href{((( item.url | texurl )))}{((( item.text | tex )))}((* else *))((( item.text | tex )))((* endif *)) ((* if item.source *)){\scriptsize\itshape (((( item.source | tex ))))}((* endif *))}\par\vspace{0.35em}
 ((* endfor *))
@@ -140,7 +140,7 @@
   \noindent\hyperlink{#1}{#2}#3\par
 }
 
-\begin{multicols}{2}
+\begin{multicols}{3}
 ((* set ns = namespace(prev='') *))
 ((* for art in articles *))
 ((* if art.source != ns.prev *))
@@ -198,7 +198,7 @@
 \articlelede{((( art.summary | tex )))}
 
 ((* if art.text | length > 2000 *))
-\begin{multicols}{2}
+\begin{multicols}{3}
 \sloppy
 ((( art.text | body ))) %
 \end{multicols}
