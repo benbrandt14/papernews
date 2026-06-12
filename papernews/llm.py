@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 
-_BACKEND = os.environ.get("LLM_BACKEND", "anthropic").lower()
+_BACKEND = os.environ.get("LLM_BACKEND", "gemini").lower()
 
 
 def chat(system: str, user: str, max_tokens: int) -> str:
@@ -12,21 +12,26 @@ def chat(system: str, user: str, max_tokens: int) -> str:
     benefits from bytes-flowing keepalive through any reverse proxy."""
     if _BACKEND == "ollama":
         return _ollama(system, user, max_tokens)
-    return _anthropic(system, user, max_tokens)
+    return _gemini(system, user, max_tokens)
 
 
-def _anthropic(system: str, user: str, max_tokens: int) -> str:
-    import anthropic
+def _gemini(system: str, user: str, max_tokens: int) -> str:
+    from google import genai
+    from google.genai import types
 
-    client = anthropic.Anthropic()
-    with client.messages.stream(
-        model=os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5"),
-        max_tokens=max_tokens,
-        system=system,
-        messages=[{"role": "user", "content": user}],
-    ) as stream:
-        final = stream.get_final_message()
-    return final.content[0].text
+    client = genai.Client()
+    response = client.models.generate_content_stream(
+        model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
+        contents=user,
+        config=types.GenerateContentConfig(
+            system_instruction=system,
+            max_output_tokens=max_tokens,
+        )
+    )
+    parts = []
+    for chunk in response:
+        parts.append(chunk.text)
+    return "".join(parts)
 
 
 def _ollama(system: str, user: str, max_tokens: int) -> str:

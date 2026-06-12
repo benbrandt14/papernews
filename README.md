@@ -1,6 +1,6 @@
 # papernews
 
-![papernews on a reMarkable, next to a cup of coffee](assets/hero.jpg)
+![papernews on a Boox Note, next to a cup of coffee](assets/hero.jpg)
 
 Every news site looks different. Hacker News, MacRumors, Quanta, my
 favourite ML blog, my favourite math blog — each one its own layout, fonts,
@@ -10,7 +10,7 @@ choices first and focus past the visual noise.
 I much prefer reading the way a LaTeX paper or an old magazine looks: quiet
 typography, generous margins, no color, nothing competing for attention.
 
-**papernews** is the fix. A script pulls all those feeds, has Claude clean
+**papernews** is the fix. A script pulls all those feeds, has Gemini clean
 up, translate to English, and rewrite the article bodies — the **full
 text**, not just summaries — and renders the result into one consistently
 typeset LaTeX PDF. Every article is *in* the PDF; you read entirely
@@ -20,7 +20,7 @@ A side benefit I didn't expect to like but very much do: one place to read
 the day's news instead of five tabs being refreshed all day. One or two
 issues per day, no more.
 
-Designed for an e-ink reader like the reMarkable, but it works just as well
+Designed for an e-ink reader like the Boox Note, but it works just as well
 in any browser's PDF viewer.
 
 **👉 [See `sample-2026-06-04.pdf` for a real day's output.](sample-2026-06-04.pdf)**
@@ -32,7 +32,7 @@ Hobby project; works. Things will move. Expect rough edges.
 ## How to use
 
 You need: a machine that can run Docker (your laptop, a NAS, a $5/mo VPS,
-anything), an LLM backend (Anthropic API key **or** a local
+anything), an LLM backend (Gemini API key **or** a local
 [Ollama](https://ollama.com) instance), and ~2 GB of disk for the image.
 
 ```bash
@@ -42,7 +42,7 @@ cd papernews
 
 # 2) Configure
 cp .env.example .env
-$EDITOR .env             # paste ANTHROPIC_API_KEY=sk-ant-... (or set LLM_BACKEND=ollama)
+$EDITOR .env             # paste GEMINI_API_KEY=AIzaSy... (or set LLM_BACKEND=ollama)
 
 # 3) Pick your sources
 $EDITOR sources.toml     # add/remove RSS/HN entries, set per-source limits
@@ -69,39 +69,31 @@ Everything you'd normally want to change is in **two files**:
 Optional but useful:
 
 - **`papernews/summarize.py`** + **`papernews/rewrite.py`** — the LLM
-  system prompts. When using Anthropic, change `ANTHROPIC_MODEL` to
-  `claude-sonnet-4-6` for fancier rewrites at ~10× the cost; adjust
+  system prompts. When using Gemini, change `GEMINI_MODEL` to
+  `gemini-2.5-pro` for fancier rewrites at ~10× the cost; adjust
   `_SYSTEM` to change the editorial voice (e.g. disable the
   auto-translate-to-English rule).
 - **`papernews/wiki.py`** — what goes into the World news block and the
   Quote-of-the-day source.
 
-### Getting the PDF onto a reMarkable
+### Getting the PDF onto a Boox Note
 
 A few different ways, no special script needed:
 
 - **Manual** — open `http://your-machine:8000/digest.pdf` in a browser on
-  your phone/laptop and upload it to your reMarkable from there (drag-and-
-  drop on `my.remarkable.com`, or the reMarkable mobile app, or the USB Web
-  Interface at `http://10.11.99.1` while connected by USB).
-- **[`rmapi`](https://github.com/ddvk/rmapi)** — a third-party CLI that
-  pushes files to your reMarkable cloud account. Pair once, then:
+  your phone/laptop and upload it to your Boox Note from there (drag-and-
+  drop via Syncthing, Dropsync, or a generic cloud drive).
+- **Syncthing / Dropsync** — Setup a background sync tool to automatically
+  pull the PDF to your device. Pair once, then:
   ```bash
-  curl -s http://your-machine:8000/digest.pdf -o today.pdf
-  rmapi put today.pdf /Papernews
+  # on your server
+  curl -s http://your-machine:8000/digest.pdf -o /path/to/sync/folder/today.pdf
   ```
   Stick that two-liner in cron on the host and the device picks it up on
   next sync automatically.
-- **[Remailable](https://github.com/remailable/remailable)** — a third-party
-  email-to-reMarkable bridge ([remailable.getneutrality.org](https://remailable.getneutrality.org)).
-  You email the PDF as an attachment to your assigned address and it appears
-  on the device. Useful if your papernews host can `mail`/`mutt` but can't
-  reach the reMarkable directly. (reMarkable has no first-party
-  email-to-device; do not believe earlier versions of this README that
-  implied otherwise.)
 
 No native push is built-in because everyone's setup is different and you
-probably don't want me poking your reMarkable cloud account with your token.
+probably don't want me poking your Android device with your token.
 
 ## Quick start
 
@@ -109,8 +101,8 @@ probably don't want me poking your reMarkable cloud account with your token.
 git clone https://github.com/yourname/papernews
 cd papernews
 cp .env.example .env
-# paste your ANTHROPIC_API_KEY into .env (get one at
-# https://console.anthropic.com/settings/keys)
+# paste your GEMINI_API_KEY into .env (get one at
+# https://aistudio.google.com/settings/keys)
 docker compose up --build
 ```
 
@@ -126,15 +118,15 @@ container restarts.
 papernews routes all LLM calls through `papernews/llm.py`. Switch backends
 with the `LLM_BACKEND` env var.
 
-### Anthropic (default)
+### Gemini (default)
 
 ```bash
 # .env
-LLM_BACKEND=anthropic
-ANTHROPIC_API_KEY=sk-ant-...
+LLM_BACKEND=gemini
+GEMINI_API_KEY=AIzaSy...
 ```
 
-Uses `claude-haiku-4-5` by default. Override with `ANTHROPIC_MODEL=claude-sonnet-4-6`
+Uses `gemini-2.5-flash` by default. Override with `GEMINI_MODEL=gemini-2.5-pro`
 for higher quality at ~10× the cost.
 
 ### Ollama (local)
@@ -334,7 +326,7 @@ since_hours = 24`.
 
 > **On the totals.** Adding up every `limit` in `sources.toml` gives you the
 > maximum article count per issue. Aim for **30–60 articles** for a
-> comfortable 30–60 minute read. Claude's summaries are dense; volume isn't
+> comfortable 30–60 minute read. Gemini's summaries are dense; volume isn't
 > quality. An empty section on a slow day is cleaner than padding.
 
 ## Scheduling ingests
@@ -376,37 +368,37 @@ argument.
 
 ```bash
 # .env
-POST_INGEST_HOOK=/data/hooks/push-to-remarkable.sh
+POST_INGEST_HOOK=/data/hooks/push-to-boox.sh
 POST_INGEST_HOOK_TIMEOUT=300    # optional; default 300s
 ```
 
 Hook failures are non-fatal — a broken hook logs an error but doesn't
 crash the ingest loop.
 
-### Sample: push to a reMarkable 2 over WiFi
+### Sample: push to a Boox Note over WiFi
 
-Drop this in `./data/hooks/push-to-remarkable.sh` and `chmod +x` it:
+Drop this in `./data/hooks/push-to-boox.sh` and `chmod +x` it:
 
 ```bash
 #!/usr/bin/env bash
-# Push the latest issue to a reMarkable 2 via SSH.
-# Usage: push-to-remarkable.sh <pdf-path>
+# Push the latest issue to a Boox Note via SSH.
+# Usage: push-to-boox.sh <pdf-path>
 set -euo pipefail
 
 PDF="$1"
-REMARKABLE="root@10.11.99.1"            # adjust to your device's IP
-SSH_KEY=/data/hooks/remarkable_id_ed25519
+BOOX="root@10.11.99.1"            # adjust to your device's IP
+SSH_KEY=/data/hooks/boox_id_ed25519
 
 scp -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new \
-    "$PDF" "$REMARKABLE:/home/root/papernews.pdf"
+    "$PDF" "$BOOX:/sdcard/papernews.pdf"
 
 # Refresh the UI so the file appears immediately.
-ssh -i "$SSH_KEY" "$REMARKABLE" 'systemctl restart xochitl'
+ssh -i "$SSH_KEY" "$BOOX" 'am start -a android.intent.action.VIEW -d file:///sdcard/papernews.pdf -t application/pdf'
 ```
 
 Generate a passwordless key (`ssh-keygen -t ed25519 -f
-data/hooks/remarkable_id_ed25519 -N ""`), add the `.pub` to the
-reMarkable's `/home/root/.ssh/authorized_keys` once, and from then on
+data/hooks/boox_id_ed25519 -N ""`), add the `.pub` to the
+Boox Note's `/data/data/com.termux/files/home/.ssh/authorized_keys` once, and from then on
 every ingest pushes the new paper to your device.
 
 The same pattern works for Kindle (`scp` over USB networking), a network
@@ -428,7 +420,7 @@ You don't have to use Docker — the CLI works directly:
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e .
-export ANTHROPIC_API_KEY=sk-ant-...   # or: export LLM_BACKEND=ollama OLLAMA_HOST=...
+export GEMINI_API_KEY=AIzaSy...   # or: export LLM_BACKEND=ollama OLLAMA_HOST=...
 
 .venv/bin/python -m papernews gather       # fetch + extract
 .venv/bin/python -m papernews summarize    # LLM pass 1 (batched)
@@ -445,7 +437,7 @@ Requirements: Python 3.11+, `xelatex` (TeX Live with `texlive-xetex`,
 
 Everything visual lives in one file: [`papernews/template.tex.j2`](papernews/template.tex.j2).
 
-- Page size: `paperwidth=157mm, paperheight=210mm` (tuned for reMarkable Pro)
+- Page size: `paperwidth=140mm, paperheight=210mm` (tuned for Boox Note)
 - Body font: Latin Modern Roman 10pt
 - Two-column body for any article over 2000 characters; single-column
   otherwise
@@ -462,7 +454,7 @@ Customize whatever you like — the Jinja delimiters are LaTeX-safe
 
 **With Ollama:** free — all inference runs locally.
 
-**With Anthropic (Claude Haiku 4.5, default):** roughly per ingest cycle
+**With Gemini (Gemini 2.5 Flash, default):** roughly per ingest cycle
 with ~50 articles:
 
 - Summarize: 6 batched calls (~8 articles each)
@@ -474,13 +466,13 @@ article lengths. At 6 cycles/day that's well under $1/day. Going to Sonnet or
 Opus multiplies the bill ~10–30×.
 
 Set a spend cap at
-https://console.anthropic.com/settings/billing → Spend limits — the run-loop
+https://aistudio.google.com/settings/billing → Spend limits — the run-loop
 can't surprise you above whatever you set.
 
 ## Privacy
 
 - All data lives on your machine (`./data/state.db` + `./data/archive/cache/`).
-- With `LLM_BACKEND=anthropic`: article text is sent to the Anthropic API
+- With `LLM_BACKEND=gemini`: article text is sent to the Gemini API
   for summarization and rewriting. That's the only outbound destination for
   content (besides fetching the feeds themselves).
 - With `LLM_BACKEND=ollama`: nothing leaves your machine. All inference
@@ -494,7 +486,7 @@ papernews/
 ├── papernews/
 │   ├── fetch.py          # HN Algolia + RSS feedparser
 │   ├── extract.py        # trafilatura
-│   ├── llm.py            # LLM backend router (Anthropic or Ollama)
+│   ├── llm.py            # LLM backend router (Gemini or Ollama)
 │   ├── summarize.py      # summarization prompts + batching
 │   ├── rewrite.py        # rewrite prompts + batching
 │   ├── wiki.py           # World news / Quote / DYK / tech feeds

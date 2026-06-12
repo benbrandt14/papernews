@@ -44,7 +44,7 @@ _SYSTEM = (
     "- Output ONLY those marker-delimited bodies. No surrounding text."
 )
 
-_MODEL = "claude-haiku-4-5"  # reference only; model selection lives in llm.py
+_MODEL = "gemini-2.5-flash"  # reference only; model selection lives in llm.py
 _MAX_CHARS = 16000
 
 
@@ -53,7 +53,7 @@ def rewrite(title: str, text: str) -> str:
 
 
 def rewrite_batch(items: Sequence[tuple[str, str]]) -> list[str]:
-    """Rewrite many (title, body) pairs in a single Anthropic call.
+    """Rewrite many (title, body) pairs in a single LLM call.
     Returns one rewritten body per input, in order; empty string for any
     item the model failed to delimit correctly."""
     if not items:

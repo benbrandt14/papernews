@@ -220,11 +220,13 @@ def fetch_world_news() -> list[dict]:
 
 def summarize_world_news(items: list[dict]) -> list[dict]:
     """Rewrite each news item into a single short sentence (~15 words),
-    preserving its source attribution. Single Anthropic call per batch."""
+    preserving its source attribution. Single LLM call per batch."""
     if not items:
         return items
 
-    from anthropic import Anthropic
+    from google import genai
+    from google.genai import types
+    import os
 
     system = (
         "You rewrite news bullets for a compact daily digest.\n"
@@ -236,13 +238,16 @@ def summarize_world_news(items: list[dict]) -> list[dict]:
     )
     user = "\n".join(f"{i+1}. {it['text']}" for i, it in enumerate(items))
     try:
-        msg = Anthropic().messages.create(
-            model="claude-haiku-4-5",
-            max_tokens=150 * len(items),
-            system=system,
-            messages=[{"role": "user", "content": user}],
+        client = genai.Client()
+        response = client.models.generate_content(
+            model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
+            contents=user,
+            config=types.GenerateContentConfig(
+                system_instruction=system,
+                max_output_tokens=150 * len(items),
+            )
         )
-        text = msg.content[0].text
+        text = response.text
     except Exception:
         return items
 

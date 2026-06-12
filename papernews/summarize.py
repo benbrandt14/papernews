@@ -22,7 +22,7 @@ _SYSTEM = (
     "- Output ONLY those summary lines, in the same order as the input. No surrounding text."
 )
 
-_MODEL = "claude-haiku-4-5"  # reference only; model selection lives in llm.py
+_MODEL = "gemini-2.5-flash"  # reference only; model selection lives in llm.py
 _MAX_CHARS = 4000
 
 
@@ -31,7 +31,7 @@ def summarize(title: str, text: str) -> str:
 
 
 def summarize_batch(items: Sequence[tuple[str, str]]) -> list[str]:
-    """Summarize many (title, body) pairs in a single Anthropic call.
+    """Summarize many (title, body) pairs in a single LLM call.
     Returns one summary per input, in order. Falls back to empty string for
     any item the model failed to label correctly."""
     if not items:
