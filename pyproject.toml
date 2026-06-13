@@ -1,7 +1,7 @@
 [project]
 name = "papernews"
 version = "0.1.0"
-description = "Daily news aggregator → LaTeX PDF digest"
+description = "Daily news aggregator → Typst PDF digest"
 requires-python = ">=3.11"
 dependencies = [
     "requests>=2.31",

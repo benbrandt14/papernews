@@ -1,7 +1,7 @@
 """Tests for the changes that addressed issue #1.
 
 These tests intentionally avoid touching the network, the Anthropic SDK, or
-xelatex. They cover the four user-visible features added in that issue:
+Typst. They cover the four user-visible features added in that issue:
 
     1. INGEST_SCHEDULE cron-style scheduling
     2. INGEST_INTERVAL_SECONDS fallback when no schedule is set
