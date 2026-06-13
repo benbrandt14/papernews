@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import random
+import sys
+import time
 
 _BACKEND = os.environ.get("LLM_BACKEND", "gemini").lower()
 
@@ -17,21 +20,34 @@ def chat(system: str, user: str, max_tokens: int) -> str:
 
 def _gemini(system: str, user: str, max_tokens: int) -> str:
     from google import genai
-    from google.genai import types
+    from google.genai import errors, types
 
     client = genai.Client()
-    response = client.models.generate_content_stream(
-        model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
-        contents=user,
-        config=types.GenerateContentConfig(
-            system_instruction=system,
-            max_output_tokens=max_tokens,
-        )
-    )
-    parts = []
-    for chunk in response:
-        parts.append(chunk.text)
-    return "".join(parts)
+    max_retries = 8
+    base_delay = 5.0
+
+    for attempt in range(max_retries + 1):
+        try:
+            response = client.models.generate_content_stream(
+                model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
+                contents=user,
+                config=types.GenerateContentConfig(
+                    system_instruction=system,
+                    max_output_tokens=max_tokens,
+                )
+            )
+            parts = []
+            for chunk in response:
+                parts.append(chunk.text)
+            return "".join(parts)
+        except errors.APIError as e:
+            if getattr(e, "code", None) in (429, 503) and attempt < max_retries:
+                delay = min(300, base_delay * (2 ** attempt)) + random.uniform(0, 5)
+                sys.stderr.write(f"  [warn] gemini API {e.code} (attempt {attempt + 1}/{max_retries}). Retrying in {delay:.1f}s...\n")
+                sys.stderr.flush()
+                time.sleep(delay)
+                continue
+            raise
 
 
 def _ollama(system: str, user: str, max_tokens: int) -> str:
