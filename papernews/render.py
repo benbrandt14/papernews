@@ -31,8 +31,6 @@ def typst_escape(s) -> str:
 
 
 def typst_url(url: str) -> str:
-    # URLs in Typst links don't generally need heavy escaping.
-    # Just escape " which could break out of a string context.
     if not url:
         return ""
     return url.replace('"', '\\"')
@@ -50,8 +48,6 @@ _MATH_RE = re.compile(
 )
 
 def _render_code_block(code: str) -> str:
-    # Typst has native code block support with ``` ... ```
-    # If the code itself contains ```, we need to add more backticks to the fence.
     fence_len = 3
     while "`" * fence_len in code:
         fence_len += 1
@@ -65,7 +61,6 @@ def _process_inline(text: str) -> str:
         if i % 2 == 0:
             out.append(typst_escape(part))
         else:
-            # Inline code: if it contains backticks, use more backticks
             fence_len = 1
             while "`" * fence_len in part:
                 fence_len += 1
@@ -75,26 +70,33 @@ def _process_inline(text: str) -> str:
 
 
 def _stash_math(text: str) -> tuple[str, list[str]]:
-    """Replace math with placeholders."""
     bits: list[str] = []
 
     def stash(m: re.Match) -> str:
         if m.group("dd") is not None:
-            val = m.group("dd").strip()
-            val = re.sub(r"\\([a-zA-Z]+)", r"\1", val)
-            bits.append(f"$ {val} $")
+            content = m.group("dd").strip()
+            is_display = True
         elif m.group("br") is not None:
-            val = m.group("br").strip()
-            val = re.sub(r"\\([a-zA-Z]+)", r"\1", val)
-            bits.append(f"$ {val} $")
+            content = m.group("br").strip()
+            is_display = True
         elif m.group("sd") is not None:
-            val = m.group("sd").strip()
-            val = re.sub(r"\\([a-zA-Z]+)", r"\1", val)
-            bits.append(f"${val}$")
+            content = m.group("sd").strip()
+            is_display = False
         else:  # pr
-            val = m.group("pr").strip()
-            val = re.sub(r"\\([a-zA-Z]+)", r"\1", val)
-            bits.append(f"${val}$")
+            content = m.group("pr").strip()
+            is_display = False
+
+        # Use dynamic backtick fencing to safely encapsulate the raw LaTeX
+        fence_len = 1
+        while "`" * fence_len in content:
+            fence_len += 1
+        fence = "`" * fence_len
+        
+        if is_display:
+            bits.append(f"#mitex({fence}{content}{fence})")
+        else:
+            bits.append(f"#mi({fence}{content}{fence})")
+
         return f"\x00MB{len(bits) - 1}\x00"
 
     return _MATH_RE.sub(stash, text), bits
@@ -156,8 +158,6 @@ def typst_body(text: str) -> str:
         def expand_math(mm: re.Match) -> str:
             return math_bits[int(mm.group(1))]
 
-        # Need to handle potential escaping of the placeholder.
-        # \x00MB{N}\x00 becomes \x00MB\{N\}\x00 because of typst_escape. Oh wait, { is not escaped.
         rendered = re.sub(r"\x00MB(\d+)\x00", expand_math, rendered)
         out.append(rendered)
 
