@@ -31,11 +31,10 @@ def typst_escape(s) -> str:
 
 def typst_url(url: str) -> str:
     # URLs in Typst links don't generally need heavy escaping.
-    # Just escape # which could break out of a string context in some cases,
-    # though within `link("...", ...)` it's fine. We'll leave it mostly raw.
+    # Just escape " which could break out of a string context.
     if not url:
         return ""
-    return url
+    return url.replace('"', '\\"')
 
 
 _FENCE_RE = re.compile(r"```[a-zA-Z0-9_+\-]*\s*\n?(.*?)```", re.DOTALL)
@@ -192,19 +191,11 @@ def build_pdf(
 
     pdf_dst = out_dir / f"{date}.pdf"
 
-    result = subprocess.run(
-        [
-            "typst",
-            "compile",
-            str(typst_path),
-            str(pdf_dst),
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        sys.stderr.write(result.stdout[-4000:])
-        sys.stderr.write(result.stderr[-2000:])
-        raise RuntimeError(f"typst failed (exit {result.returncode})")
+    import typst
+    try:
+        typst.compile(str(typst_path), output=str(pdf_dst))
+    except typst.TypstError as e:
+        sys.stderr.write(str(e))
+        raise RuntimeError(f"typst failed: {e}")
 
     return pdf_dst
