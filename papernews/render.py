@@ -80,13 +80,21 @@ def _stash_math(text: str) -> tuple[str, list[str]]:
 
     def stash(m: re.Match) -> str:
         if m.group("dd") is not None:
-            bits.append(f"$ {m.group('dd').strip()} $")
+            val = m.group("dd").strip()
+            val = re.sub(r"\\([a-zA-Z]+)", r"\1", val)
+            bits.append(f"$ {val} $")
         elif m.group("br") is not None:
-            bits.append(f"$ {m.group('br').strip()} $")
+            val = m.group("br").strip()
+            val = re.sub(r"\\([a-zA-Z]+)", r"\1", val)
+            bits.append(f"$ {val} $")
         elif m.group("sd") is not None:
-            bits.append(f"${m.group('sd').strip()}$")
+            val = m.group("sd").strip()
+            val = re.sub(r"\\([a-zA-Z]+)", r"\1", val)
+            bits.append(f"${val}$")
         else:  # pr
-            bits.append(f"${m.group('pr').strip()}$")
+            val = m.group("pr").strip()
+            val = re.sub(r"\\([a-zA-Z]+)", r"\1", val)
+            bits.append(f"${val}$")
         return f"\x00MB{len(bits) - 1}\x00"
 
     return _MATH_RE.sub(stash, text), bits

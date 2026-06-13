@@ -7,7 +7,7 @@ favourite ML blog, my favourite math blog — each one its own layout, fonts,
 colors, ads. To read anything I had to wade through somebody's design
 choices first and focus past the visual noise.
 
-I much prefer reading the way a LaTeX paper or an old magazine looks: quiet
+I much prefer reading the way an academic paper or an old magazine looks: quiet
 typography, generous margins, no color, nothing competing for attention.
 
 **papernews** is the fix. A script pulls all those feeds, has Gemini clean
@@ -48,7 +48,7 @@ $EDITOR .env             # paste GEMINI_API_KEY=AIzaSy... (or set LLM_BACKEND=ol
 $EDITOR sources.toml     # add/remove RSS/HN entries, set per-source limits
 
 # 4) (Optional) Tweak the look
-$EDITOR papernews/template.tex.j2
+$EDITOR papernews/template.typ.j2
 
 # 5) Build + run
 docker compose up --build -d
@@ -62,7 +62,7 @@ Everything you'd normally want to change is in **two files**:
 - **`sources.toml`** — which feeds, how many items per feed, in what order.
   Two source kinds today: `kind = "hn"` (Hacker News, top-by-points via the
   Algolia API) and `kind = "rss"` (any Atom/RSS feed via feedparser).
-- **`papernews/template.tex.j2`** — the LaTeX template. Page size, fonts,
+- **`papernews/template.typ.j2`** — the Typst template. Page size, fonts,
   colors, layout, what goes on the cover, everything. Edit, restart the
   container, refresh `/digest.pdf`.
 
@@ -168,7 +168,7 @@ A 100–200 page PDF with:
 - **"Did you know…"** trivia nuggets from Wikipedia's Main Page.
 - **The articles themselves**, set in two-column Latin Modern with proper
   paragraph indents, hyphenation, microtypography. Math (`$x = y$`,
-  `$$\int f$$`, `\(...\)`, `\[...\]`) is rendered as real LaTeX math. Code
+  `$$\int f$$`, `\(...\)`, `\[...\]`) is rendered as real Typst math. Code
   blocks (fenced or inline) come through in monospace.
 - All non-English source content (heise, etc.) is translated to English
   during the rewrite step. You can disable that in the prompt if you don't
