@@ -270,7 +270,9 @@ def build_pdf(
     try:
         typst.compile(str(typst_path), output=str(pdf_dst))
     except typst.TypstError as e:
-        sys.stderr.write(str(e))
-        raise RuntimeError(f"typst failed: {e}")
+        sys.stderr.write(f"\n[error] Typst compilation failed!\n")
+        sys.stderr.write(f"[error] You can inspect the generated source file here: {typst_path}\n")
+        sys.stderr.write(f"[error] Typst error details:\n{e}\n\n")
+        raise RuntimeError(f"typst failed on {typst_path}: {e}")
 
     return pdf_dst
