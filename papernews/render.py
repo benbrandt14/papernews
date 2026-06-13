@@ -1,22 +1,22 @@
 from __future__ import annotations
 
+import functools
+import hashlib
 import re
 import shutil
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 
 import jinja2
 
 _TYPST_REPLACE = {
     "\\": r"\\",
-    "*": r"\*",
-    "_": r"\_",
     "$": r"\$",
     "<": r"\<",
     ">": r"\>",
     "@": r"\@",
-    "#": r"\#",
     "`": r"\`",
     "{": r"\{",
     "}": r"\}",
@@ -39,6 +39,8 @@ def typst_url(url: str) -> str:
 _FENCE_RE = re.compile(r"```[a-zA-Z0-9_+\-]*\s*\n?(.*?)```", re.DOTALL)
 _INLINE_RE = re.compile(r"`([^`\n]+)`")
 
+_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\((https?://[^\)]+)\)")
+
 _MATH_RE = re.compile(
     r"\$\$(?P<dd>.+?)\$\$"
     r"|\\\[(?P<br>.+?)\\\]"
@@ -46,6 +48,56 @@ _MATH_RE = re.compile(
     r"|\\\((?P<pr>.+?)\\\)",
     re.DOTALL,
 )
+
+def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
+    bits: list[str] = []
+
+    def stash(m: re.Match) -> str:
+        alt = m.group(1)
+        url = m.group(2)
+
+        # Create hash-based filename for downloaded image
+        url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
+
+        assets_dir = workdir / "assets"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+
+        # We don't know the exact extension yet if we haven't downloaded it,
+        # but we can look for existing files with this hash
+        existing = list(assets_dir.glob(f"{url_hash}.*"))
+        if existing:
+            filename = existing[0].name
+        else:
+            try:
+                # Add a basic User-Agent to avoid easy 403s
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    ctype = response.info().get_content_type()
+                    ext = ".jpg"
+                    if ctype == "image/png":
+                        ext = ".png"
+                    elif ctype == "image/gif":
+                        ext = ".gif"
+                    elif ctype == "image/webp":
+                        ext = ".webp"
+                    elif ctype == "image/svg+xml":
+                        ext = ".svg"
+
+                    filename = f"{url_hash}{ext}"
+                    img_path = assets_dir / filename
+                    with open(img_path, "wb") as f:
+                        shutil.copyfileobj(response, f)
+            except Exception as e:
+                sys.stderr.write(f"  [warn] failed to fetch image {url}: {e}\n")
+                # Fallback to just the text if image fails to download
+                bits.append(f"[{alt}]({url})")
+                return f"\x00IMG{len(bits) - 1}\x00"
+
+        # Note: Typst requires image paths relative to the project root/workdir or absolute
+        bits.append(f'#figure(image("assets/{filename}", width: 80%), caption: [{alt}])')
+        return f"\x00IMG{len(bits) - 1}\x00"
+
+    return _IMAGE_RE.sub(stash, text), bits
 
 def _render_code_block(code: str) -> str:
     fence_len = 3
@@ -87,15 +139,23 @@ def _stash_math(text: str) -> tuple[str, list[str]]:
             is_display = False
 
         # Use dynamic backtick fencing to safely encapsulate the raw LaTeX
-        fence_len = 1
+        # Typst supports 1 backtick (inline code) or 3+ backticks (code block)
+        fence_len = 3 if is_display else 1
         while "`" * fence_len in content:
             fence_len += 1
+        # Typst requires block code strings to be at least 3 backticks, inline can be 1 or more but let's stick to 1 or 3+
+        if fence_len == 2:
+            fence_len = 3
+
         fence = "`" * fence_len
         
         if is_display:
-            bits.append(f"#mitex({fence}{content}{fence})")
+            # We add \n so backticks don't merge if content starts/ends with `
+            bits.append(f"#mitex({fence}\n{content}\n{fence})")
         else:
-            bits.append(f"#mi({fence}{content}{fence})")
+            space_start = " " if content.startswith("`") else ""
+            space_end = " " if content.endswith("`") else ""
+            bits.append(f"#mi({fence}{space_start}{content}{space_end}{fence})")
 
         return f"\x00MB{len(bits) - 1}\x00"
 
@@ -119,7 +179,7 @@ def _strip_leading_date_line(text: str) -> str:
     return "\n".join(lines)
 
 
-def typst_body(text: str) -> str:
+def typst_body(text: str, workdir: Path) -> str:
     if not text:
         return ""
     text = _strip_leading_date_line(text)
@@ -131,6 +191,7 @@ def typst_body(text: str) -> str:
         return f"\x00CB{len(blocks) - 1}\x00"
 
     stashed = _FENCE_RE.sub(stash_code, text)
+    stashed, img_bits = _stash_images(stashed, workdir)
     stashed, math_bits = _stash_math(stashed)
 
     paras = (
@@ -157,13 +218,17 @@ def typst_body(text: str) -> str:
 
         def expand_math(mm: re.Match) -> str:
             return math_bits[int(mm.group(1))]
-
         rendered = re.sub(r"\x00MB(\d+)\x00", expand_math, rendered)
+
+        def expand_img(mm: re.Match) -> str:
+            return img_bits[int(mm.group(1))]
+        rendered = re.sub(r"\x00IMG(\d+)\x00", expand_img, rendered)
+
         out.append(rendered)
 
     return "\n\n".join(out)
 
-def _env(tpl_dir: Path) -> jinja2.Environment:
+def _env(tpl_dir: Path, workdir: Path) -> jinja2.Environment:
     env = jinja2.Environment(
         block_start_string="((*",
         block_end_string="*))",
@@ -178,7 +243,7 @@ def _env(tpl_dir: Path) -> jinja2.Environment:
     )
     env.filters["typst"] = typst_escape
     env.filters["typst_url"] = typst_url
-    env.filters["typst_body"] = typst_body
+    env.filters["typst_body"] = functools.partial(typst_body, workdir=workdir)
     return env
 
 
@@ -189,12 +254,13 @@ def build_pdf(
     decorations: dict | None = None,
 ) -> Path:
     tpl_dir = Path(__file__).parent
-    env = _env(tpl_dir)
+    workdir = out_dir / ".build"
+    workdir.mkdir(parents=True, exist_ok=True)
+
+    env = _env(tpl_dir, workdir)
     tpl = env.get_template("template.typ.j2")
     typst_source = tpl.render(date=date, articles=articles, decorations=decorations or {})
 
-    workdir = out_dir / ".build"
-    workdir.mkdir(parents=True, exist_ok=True)
     typst_path = workdir / f"{date}.typ"
     typst_path.write_text(typst_source, encoding="utf-8")
 
