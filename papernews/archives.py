@@ -152,37 +152,22 @@ def generate_archives_article(articles: list[dict], collection_name: str = "arch
         _log(f"[archives] Failed to query archives: {e}")
         return None
 
-    _log("[archives] Writing retrospective article...")
-    write_prompt = (
-        f"You are a historical retrospective writer for a news magazine. Today's theme is '{theme_query}'.\n"
-        f"Write a short, engaging article (around 300 words) that connects this theme to the following "
-        f"excerpt from a historical magazine archive ({source_meta}).\n\n"
-        f"Archive Excerpt:\n{best_doc}\n\n"
-        "Your article should have a catchy title on the first line, followed by a blank line, and then the body. "
-        "Make it read like a 'From the Archives' feature that shows how far we've come or how history repeats itself."
-    )
+    _log("[archives] Extracting direct historical text...")
 
     try:
-        article_res = genai_client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=write_prompt,
-        )
-        content = article_res.text.strip()
-
-        parts = content.split('\n', 1)
-        title = parts[0].strip().replace('#', '').strip()
-        body = parts[1].strip() if len(parts) > 1 else ""
-
         from datetime import date
+
+        # Clean up the filename for the title (e.g., "Popular_Mechanics_1985.pdf" -> "Popular Mechanics 1985")
+        clean_title = source_meta.replace('_', ' ').replace('.pdf', '')
 
         return {
             "source": "From the Archives",
             "url": f"local://archives/{source_meta}",
-            "title": title,
-            "text": body,
-            "summary": f"A look back at {source_meta} and how it relates to today's news.",
+            "title": clean_title,
+            "text": best_doc.strip(),
+            "summary": f"A relevant excerpt from {clean_title} matching the theme: {theme_query}",
             "date": date.today().strftime("%b %d, %Y"),
         }
     except Exception as e:
-        _log(f"[archives] Failed to write article: {e}")
+        _log(f"[archives] Failed to extract archive article: {e}")
         return None

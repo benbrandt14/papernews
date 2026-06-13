@@ -474,7 +474,7 @@ can't surprise you above whatever you set.
 
 Papernews includes a lightweight RAG (Retrieval-Augmented Generation) system to add a touch of historical context to your daily news.
 
-If you have a collection of unstructured historical PDFs (e.g., old issues of Popular Science, Popular Mechanics, or academic journals), you can ingest them into a local vector database. When rendering the daily PDF, Papernews will analyze the day's top stories, identify a core theme, search your historical archives for a relevant snippet, and ask the LLM to write a short "From the Archives" retrospective article connecting the past to the present.
+If you have a collection of unstructured historical PDFs (e.g., old issues of Popular Science, Popular Mechanics, or academic journals), you can ingest them into a local vector database. When rendering the daily PDF, Papernews will analyze the day's top stories, identify a core theme, search your historical archives for a relevant snippet, and directly embed that historical excerpt into the issue.
 
 ### Setting up the Archives
 
@@ -490,7 +490,7 @@ If you have a collection of unstructured historical PDFs (e.g., old issues of Po
    .venv/bin/python -m papernews ingest-archives ./my_archives
    ```
 
-3. **Enjoy the results:** That's it! The next time you render a PDF (e.g., by hitting `/digest.pdf`), Papernews will automatically check the database, write the retrospective, and neatly append it to the issue under the section "From the Archives".
+3. **Enjoy the results:** That's it! The next time you render a PDF (e.g., by hitting `/digest.pdf`), Papernews will automatically check the database, extract the most relevant historical text, and neatly append it to the issue under the section "From the Archives".
 
 *Note: Ingestion uses Gemini's embedding models (`text-embedding-004`). Ensure your `GEMINI_API_KEY` is set.*
 
