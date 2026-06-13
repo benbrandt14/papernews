@@ -68,6 +68,7 @@ Everything you'd normally want to change is in **two files**:
 
 Optional but useful:
 
+- **Historical Archives RAG** — You can point the script at a directory of unstructured historical PDFs (like old magazines) to automatically generate a "From the Archives" retrospective article tied to today's news themes. See the section below.
 - **`papernews/summarize.py`** + **`papernews/rewrite.py`** — the LLM
   system prompts. When using Gemini, change `GEMINI_MODEL` to
   `gemini-2.5-pro` for fancier rewrites at ~10× the cost; adjust
@@ -468,6 +469,30 @@ Opus multiplies the bill ~10–30×.
 Set a spend cap at
 https://aistudio.google.com/settings/billing → Spend limits — the run-loop
 can't surprise you above whatever you set.
+
+## "From the Archives" RAG Feature
+
+Papernews includes a lightweight RAG (Retrieval-Augmented Generation) system to add a touch of historical context to your daily news.
+
+If you have a collection of unstructured historical PDFs (e.g., old issues of Popular Science, Popular Mechanics, or academic journals), you can ingest them into a local vector database. When rendering the daily PDF, Papernews will analyze the day's top stories, identify a core theme, search your historical archives for a relevant snippet, and directly embed that historical excerpt into the issue.
+
+### Setting up the Archives
+
+1. **Gather your PDFs:** Place your historical PDFs into a directory on your machine (e.g., `./my_archives`).
+2. **Ingest the PDFs:** Run the following command to chunk and embed the text into a local ChromaDB database.
+
+   If you are running via Docker, you can execute this inside the container (assuming you bind-mounted your PDF directory):
+   ```bash
+   docker compose exec app papernews ingest-archives /path/to/my_archives
+   ```
+   Or if you are running locally:
+   ```bash
+   .venv/bin/python -m papernews ingest-archives ./my_archives
+   ```
+
+3. **Enjoy the results:** That's it! The next time you render a PDF (e.g., by hitting `/digest.pdf`), Papernews will automatically check the database, extract the most relevant historical text, and neatly append it to the issue under the section "From the Archives".
+
+*Note: Ingestion uses Gemini's embedding models (`text-embedding-004`). Ensure your `GEMINI_API_KEY` is set.*
 
 ## Privacy
 

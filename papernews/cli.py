@@ -11,6 +11,7 @@ from .extract import extract
 from .fetch import fetch_hn, fetch_rss, fetch_wikipedia_events
 from .render import build_pdf
 from .store import Store
+from .archives import ingest_pdfs, generate_archives_article
 from .wiki import (
     fetch_did_you_know,
     fetch_quote_of_day,
@@ -260,6 +261,12 @@ def cmd_render(
     if not articles:
         _log("[render] no ready articles in store yet")
         return 0
+
+    _log("[render] checking for historical archive tie-in...")
+    archive_article = generate_archives_article(articles)
+    if archive_article:
+        articles.append(archive_article)
+
     _log("[render] fetching cover decorations (Wikipedia world news + QOTD + DYK)")
     decorations = _gather_decorations()
     _log(f"[render] {len(articles)} articles → PDF")
@@ -315,6 +322,9 @@ def main(argv: list[str] | None = None) -> int:
     sp_ren = sub.add_parser("render", help="render the current edition PDF")
     sp_ren.add_argument("--date", default=date_cls.today().isoformat())
 
+    sp_ing_arch = sub.add_parser("ingest-archives", help="ingest a directory of historical PDFs for RAG")
+    sp_ing_arch.add_argument("pdf_dir", type=Path, help="directory containing PDFs")
+
     sub.add_parser("status", help="print store counts")
 
     sp_b = sub.add_parser("build", help="ingest + render (default)")
@@ -338,6 +348,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if cmd == "gather":
         return cmd_gather(store, sources)
+    if cmd == "ingest-archives":
+        ingest_pdfs(args.pdf_dir)
+        return 0
     if cmd == "summarize":
         return cmd_summarize(store, args.workers)
     if cmd == "rewrite":
