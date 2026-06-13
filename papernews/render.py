@@ -13,6 +13,8 @@ import jinja2
 
 _TYPST_REPLACE = {
     "\\": r"\\",
+    "*": r"\*",
+    "_": r"\_",
     "$": r"\$",
     "<": r"\<",
     ">": r"\>",
@@ -48,6 +50,28 @@ _MATH_RE = re.compile(
     r"|\\\((?P<pr>.+?)\\\)",
     re.DOTALL,
 )
+
+_STRONG_RE = re.compile(r"\*\*(?!\s)(.+?)(?<!\s)\*\*")
+_EMPH_RE = re.compile(r"(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)")
+_STRONG_US_RE = re.compile(r"__(?!\s)(.+?)(?<!\s)__")
+_EMPH_US_RE = re.compile(r"(?<![a-zA-Z0-9_])_(?!\s)(.+?)(?<!\s)_(?![a-zA-Z0-9_])")
+
+def _stash_typography(text: str) -> tuple[str, list[str]]:
+    bits: list[str] = []
+
+    def stash_bold(m: re.Match) -> str:
+        bits.append(f"#strong[{m.group(1)}]")
+        return f"\x00TYP{len(bits) - 1}\x00"
+
+    def stash_italic(m: re.Match) -> str:
+        bits.append(f"#emph[{m.group(1)}]")
+        return f"\x00TYP{len(bits) - 1}\x00"
+
+    stashed = _STRONG_RE.sub(stash_bold, text)
+    stashed = _EMPH_RE.sub(stash_bold, stashed)
+    stashed = _STRONG_US_RE.sub(stash_bold, stashed)
+    stashed = _EMPH_US_RE.sub(stash_italic, stashed)
+    return stashed, bits
 
 def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
     bits: list[str] = []
@@ -193,6 +217,7 @@ def typst_body(text: str, workdir: Path) -> str:
     stashed = _FENCE_RE.sub(stash_code, text)
     stashed, img_bits = _stash_images(stashed, workdir)
     stashed, math_bits = _stash_math(stashed)
+    stashed, typ_bits = _stash_typography(stashed)
 
     paras = (
         re.split(r"\n\s*\n+", stashed.strip())
@@ -223,6 +248,10 @@ def typst_body(text: str, workdir: Path) -> str:
         def expand_img(mm: re.Match) -> str:
             return img_bits[int(mm.group(1))]
         rendered = re.sub(r"\x00IMG(\d+)\x00", expand_img, rendered)
+
+        def expand_typ(mm: re.Match) -> str:
+            return typ_bits[int(mm.group(1))]
+        rendered = re.sub(r"\x00TYP(\d+)\x00", expand_typ, rendered)
 
         out.append(rendered)
 
