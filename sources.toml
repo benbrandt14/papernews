@@ -8,55 +8,162 @@
 # World news (Wikipedia Current events) is rendered inline on page 1 from
 # decorations — NOT configured here as a regular article source.
 
+# Add, remove, or reorder sources here.
+# kind = "hn"  -> Hacker News via Algolia search (top by points in a window)
+# kind = "rss" -> RSS/Atom feed via feedparser
+#
+# Order matters: sources appear in this order in the PDF contents and
+# article sequence. Quality first, social last.
+
+# World news (Wikipedia Current events) is rendered inline on page 1 from
+# decorations — NOT configured here as a regular article source.
+
 # --- Math / Science ------------------------------------------------------
 
 [[source]]
 name = "Quanta Magazine"
 kind = "rss"
 url = "https://www.quantamagazine.org/feed/"
-limit = 8
+limit = 1
 
 [[source]]
 name = "Terence Tao"
 kind = "rss"
 url = "https://terrytao.wordpress.com/feed/"
-limit = 5
+limit = 1
+
+# --- Space -----------------------------------------------------
+
+[[source]]
+name  = "SpaceNews"
+kind  = "rss"
+url   = "https://spacenews.com/feed/"
+limit = 1
+
+[[source]]
+name  = "Aviation Week Space"
+kind  = "rss"
+url   = "https://aviationweek.com/rss/space"
+limit = 1
+
+# --- Academic  -----------------------------------------------------------
+
+[[source]]
+name  = "Nature"
+kind  = "rss"
+url   = "https://www.nature.com/nature.rss"
+limit = 2
+
+[[source]]
+name  = "Nature Machine Intelligence"
+kind  = "rss"
+url   = "https://www.nature.com/natmachintell.rss"
+limit = 1
+
+[[source]]
+name  = "arXiv: Optimization & Control"
+kind  = "rss"
+url   = "https://export.arxiv.org/rss/math.OC"
+limit = 1
+
+[[source]]
+name  = "IEEE Spectrum Robotics"
+kind  = "rss"
+url   = "https://spectrum.ieee.org/feeds/feed.rss?query=robotics"
+limit = 2
+
+[[source]]
+name  = "arXiv: Robotics"
+kind  = "rss"
+url   = "https://export.arxiv.org/rss/cs.RO"
+limit = 2
+
+[[source]]
+name  = "DeepMind Research"
+kind  = "rss"
+url   = "https://deepmind.google/blog/rss.xml"
+limit = 1
 
 # --- ML / AI -------------------------------------------------------------
+
+[[source]]
+name  = "BAIR Blog"
+kind  = "rss"
+url   = "https://bair.berkeley.edu/blog/feed.xml"
+limit = 1
 
 [[source]]
 name = "Lil'Log"
 kind = "rss"
 url = "https://lilianweng.github.io/index.xml"
-limit = 5
+limit = 1
 
 [[source]]
 name = "The Gradient"
 kind = "rss"
 url = "https://thegradient.pub/rss/"
-limit = 5
+limit = 1
 
-# --- Apple ecosystem -----------------------------------------------------
+# --- Programming -------------------------------------------------
 
 [[source]]
-name = "MacRumors"
-kind = "rss"
-url = "https://feeds.macrumors.com/MacRumors-All"
-limit = 15
+name  = "Sutter's Mill"
+kind  = "rss"
+url   = "https://herbsutter.com/feed/"
+limit = 1
+
+[[source]]
+name  = "Armin Ronacher"
+kind  = "rss"
+url   = "https://lucumr.pocoo.org/feed.atom"
+limit = 1
+
+[[source]]
+name  = "Rust Blog"
+kind  = "rss"
+url   = "https://blog.rust-lang.org/feed.xml"
+limit = 1
+
+[[source]]
+name  = "Julia Evans"
+kind  = "rss"
+url   = "https://jvns.ca/atom.xml"
+limit = 1
+
+# --- Synthesis -----------------------------------------------------
+
+[[source]]
+name  = "Synthtopia"
+kind  = "rss"
+url   = "https://www.synthtopia.com/feed/"
+limit = 2
+
+# --- Photography ---------------------------------------------------
+
+[[source]]
+name  = "PetaPixel"
+kind  = "rss"
+url   = "https://petapixel.com/feed/"
+limit = 1
+
+[[source]]
+name  = "35mmc"
+kind  = "rss"
+url   = "https://www.35mmc.com/feed/"
+limit = 1
 
 # --- Aggregator (last on purpose; mostly social, occasional gems) --------
 
 [[source]]
 name = "Hacker News"
 kind = "hn"
-limit = 10
+limit = 6
 since_hours = 48
-min_points = 100
+min_points = 250
 
-# --- Disabled (uncomment to re-enable) -----------------------------------
-
-# [[source]]
-# name = "heise"
-# kind = "rss"
-# url = "https://www.heise.de/rss/heise-atom.xml"
-# limit = 15
+[[source]]
+name  = "Hackaday"
+kind  = "rss"
+url   = "https://hackaday.com/blog/feed/"
+limit = 4
+since_hours = 48
