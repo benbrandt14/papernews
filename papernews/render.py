@@ -8,55 +8,38 @@ from pathlib import Path
 
 import jinja2
 
-
-_TEX_REPLACE = {
-    "\\": r"\textbackslash{}",
+_TYPST_REPLACE = {
+    "\\": r"\\",
+    "*": r"\*",
+    "_": r"\_",
+    "$": r"\$",
+    "<": r"\<",
+    ">": r"\>",
+    "@": r"\@",
+    "#": r"\#",
+    "`": r"\`",
     "{": r"\{",
     "}": r"\}",
-    "$": r"\$",
-    "&": r"\&",
-    "%": r"\%",
-    "#": r"\#",
-    "_": r"\_",
-    "~": r"\textasciitilde{}",
-    "^": r"\textasciicircum{}",
 }
 
 
-def tex_escape(s) -> str:
+def typst_escape(s) -> str:
     if s is None:
         return ""
-    return "".join(_TEX_REPLACE.get(c, c) for c in str(s))
+    return "".join(_TYPST_REPLACE.get(c, c) for c in str(s))
 
 
-def tex_paragraphs(text: str) -> str:
-    # trafilatura's plain-text output separates paragraphs with a single
-    # newline; any run of \n is a paragraph boundary.
-    parts = re.split(r"\n+", text or "")
-    paras = [p.strip() for p in parts if p.strip()]
-    return "\n\n".join(tex_escape(p) for p in paras)
-
-
-def tex_url(url: str) -> str:
-    # \href{} is mostly raw-tolerant but breaks on %, #, \, and unbalanced
-    # braces. Escape just the dangerous ones.
+def typst_url(url: str) -> str:
+    # URLs in Typst links don't generally need heavy escaping.
+    # Just escape " which could break out of a string context.
     if not url:
         return ""
-    return (
-        url.replace("\\", r"\\")
-        .replace("%", r"\%")
-        .replace("#", r"\#")
-        .replace("{", r"\{")
-        .replace("}", r"\}")
-    )
+    return url.replace('"', '\\"')
 
 
 _FENCE_RE = re.compile(r"```[a-zA-Z0-9_+\-]*\s*\n?(.*?)```", re.DOTALL)
 _INLINE_RE = re.compile(r"`([^`\n]+)`")
 
-# Math delimiters: $$...$$, \[...\], $...$, \(...\). Order matters — double
-# dollars first so they win over single dollars, and bracket forms before
-# round forms for the same reason.
 _MATH_RE = re.compile(
     r"\$\$(?P<dd>.+?)\$\$"
     r"|\\\[(?P<br>.+?)\\\]"
@@ -65,62 +48,40 @@ _MATH_RE = re.compile(
     re.DOTALL,
 )
 
-
-def _tex_escape_code(s: str) -> str:
-    return (
-        s.replace("\\", r"\textbackslash{}")
-        .replace("{", r"\{")
-        .replace("}", r"\}")
-        .replace("$", r"\$")
-        .replace("&", r"\&")
-        .replace("%", r"\%")
-        .replace("#", r"\#")
-        .replace("_", r"\_")
-        .replace("~", r"\textasciitilde{}")
-        .replace("^", r"\textasciicircum{}")
-    )
-
-
 def _render_code_block(code: str) -> str:
-    lines = code.rstrip("\n").split("\n")
-    rendered = []
-    for ln in lines:
-        m = re.match(r"^[ \t]*", ln)
-        leading = m.group(0).replace("\t", "    ")
-        rest = ln[len(m.group(0)):]
-        line_tex = ("~" * len(leading)) + _tex_escape_code(rest)
-        rendered.append(f"\\mbox{{}}{line_tex}\\par")
-    inner = "\n".join(rendered)
-    return (
-        "\n\\par\\smallskip\n"
-        "{\\setlength{\\parindent}{0pt}\\setlength{\\parskip}{0pt}"
-        "\\ttfamily\\footnotesize\\raggedright\n"
-        + inner
-        + "\n}\n\\par\\smallskip\n"
-    )
-
+    # Typst has native code block support with ``` ... ```
+    # If the code itself contains ```, we need to add more backticks to the fence.
+    fence_len = 3
+    while "`" * fence_len in code:
+        fence_len += 1
+    fence = "`" * fence_len
+    return f"\n\n{fence}\n{code}\n{fence}\n\n"
 
 def _process_inline(text: str) -> str:
     parts = _INLINE_RE.split(text)
     out = []
     for i, part in enumerate(parts):
         if i % 2 == 0:
-            out.append(tex_escape(part))
+            out.append(typst_escape(part))
         else:
-            out.append("\\texttt{" + _tex_escape_code(part) + "}")
+            # Inline code: if it contains backticks, use more backticks
+            fence_len = 1
+            while "`" * fence_len in part:
+                fence_len += 1
+            fence = "`" * fence_len
+            out.append(f"{fence}{part}{fence}")
     return "".join(out)
 
 
 def _stash_math(text: str) -> tuple[str, list[str]]:
-    """Replace $..$ / $$..$$ / \\(..\\) / \\[..\\] with placeholders.
-    Returns (text_with_placeholders, list_of_LaTeX_math_to_inject)."""
+    """Replace math with placeholders."""
     bits: list[str] = []
 
     def stash(m: re.Match) -> str:
         if m.group("dd") is not None:
-            bits.append(f"\\[{m.group('dd').strip()}\\]")
+            bits.append(f"$ {m.group('dd').strip()} $")
         elif m.group("br") is not None:
-            bits.append(f"\\[{m.group('br').strip()}\\]")
+            bits.append(f"$ {m.group('br').strip()} $")
         elif m.group("sd") is not None:
             bits.append(f"${m.group('sd').strip()}$")
         else:  # pr
@@ -128,7 +89,6 @@ def _stash_math(text: str) -> tuple[str, list[str]]:
         return f"\x00MB{len(bits) - 1}\x00"
 
     return _MATH_RE.sub(stash, text), bits
-
 
 _LEADING_DATE_RE = re.compile(
     r"^\s*("
@@ -139,11 +99,7 @@ _LEADING_DATE_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
-
 def _strip_leading_date_line(text: str) -> str:
-    """If the body starts with a date-only line (the publication date the
-    author wrote at the top of their post), drop it — we already show the
-    publication date in the article header."""
     lines = text.lstrip("\n").split("\n")
     while lines and _LEADING_DATE_RE.fullmatch(lines[0].strip()):
         lines = lines[1:]
@@ -152,16 +108,11 @@ def _strip_leading_date_line(text: str) -> str:
     return "\n".join(lines)
 
 
-def tex_body(text: str) -> str:
-    """Render an article body that may contain markdown-fenced code blocks,
-    inline backtick code, and LaTeX math expressions ($..$, $$..$$, etc.).
-    Prose flows as paragraphs; code becomes monospace blocks; math passes
-    through to LaTeX math mode untouched."""
+def typst_body(text: str) -> str:
     if not text:
         return ""
     text = _strip_leading_date_line(text)
 
-    # 1) Stash fenced code blocks first.
     blocks: list[str] = []
 
     def stash_code(m: re.Match) -> str:
@@ -169,8 +120,6 @@ def tex_body(text: str) -> str:
         return f"\x00CB{len(blocks) - 1}\x00"
 
     stashed = _FENCE_RE.sub(stash_code, text)
-
-    # 2) Stash math expressions so escaping doesn't munge backslashes/braces.
     stashed, math_bits = _stash_math(stashed)
 
     paras = (
@@ -188,27 +137,22 @@ def tex_body(text: str) -> str:
             out.append(_render_code_block(blocks[int(m.group(1))]))
             continue
 
-        # Expand inline code blocks (rare — usually their own paragraph).
         def expand_code(mm: re.Match) -> str:
             return _render_code_block(blocks[int(mm.group(1))])
 
         p = re.sub(r"\x00CB(\d+)\x00", expand_code, p)
 
-        # Process prose: handle inline backtick code + tex-escape the rest,
-        # WITHOUT touching math placeholders.
         rendered = _process_inline(p)
 
-        # Re-inject math placeholders as raw LaTeX (they were escaped to
-        # \x00MB{N}\x00 → \textbackslash{}x00MB... — restore.
         def expand_math(mm: re.Match) -> str:
             return math_bits[int(mm.group(1))]
 
-        # The placeholder may have been mangled by tex_escape; recover both
-        # the raw and any escaped form.
+        # Need to handle potential escaping of the placeholder.
+        # \x00MB{N}\x00 becomes \x00MB\{N\}\x00 because of typst_escape. Oh wait, { is not escaped.
         rendered = re.sub(r"\x00MB(\d+)\x00", expand_math, rendered)
         out.append(rendered)
-    return "\n\n".join(out)
 
+    return "\n\n".join(out)
 
 def _env(tpl_dir: Path) -> jinja2.Environment:
     env = jinja2.Environment(
@@ -223,10 +167,9 @@ def _env(tpl_dir: Path) -> jinja2.Environment:
         trim_blocks=True,
         lstrip_blocks=True,
     )
-    env.filters["tex"] = tex_escape
-    env.filters["texpar"] = tex_paragraphs
-    env.filters["texurl"] = tex_url
-    env.filters["body"] = tex_body
+    env.filters["typst"] = typst_escape
+    env.filters["typst_url"] = typst_url
+    env.filters["typst_body"] = typst_body
     return env
 
 
@@ -238,34 +181,21 @@ def build_pdf(
 ) -> Path:
     tpl_dir = Path(__file__).parent
     env = _env(tpl_dir)
-    tpl = env.get_template("template.tex.j2")
-    tex_source = tpl.render(date=date, articles=articles, decorations=decorations or {})
+    tpl = env.get_template("template.typ.j2")
+    typst_source = tpl.render(date=date, articles=articles, decorations=decorations or {})
 
     workdir = out_dir / ".build"
     workdir.mkdir(parents=True, exist_ok=True)
-    tex_path = workdir / f"{date}.tex"
-    tex_path.write_text(tex_source, encoding="utf-8")
+    typst_path = workdir / f"{date}.typ"
+    typst_path.write_text(typst_source, encoding="utf-8")
 
-    # Run twice so hyperref's page references resolve.
-    for _ in range(2):
-        result = subprocess.run(
-            [
-                "xelatex",
-                "-interaction=nonstopmode",
-                "-halt-on-error",
-                "-output-directory",
-                str(workdir),
-                str(tex_path),
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            sys.stderr.write(result.stdout[-4000:])
-            sys.stderr.write(result.stderr[-2000:])
-            raise RuntimeError(f"xelatex failed (exit {result.returncode})")
-
-    pdf_src = workdir / f"{date}.pdf"
     pdf_dst = out_dir / f"{date}.pdf"
-    shutil.copy(pdf_src, pdf_dst)
+
+    import typst
+    try:
+        typst.compile(str(typst_path), output=str(pdf_dst))
+    except typst.TypstError as e:
+        sys.stderr.write(str(e))
+        raise RuntimeError(f"typst failed: {e}")
+
     return pdf_dst

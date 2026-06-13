@@ -5,18 +5,16 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# System packages: a minimal TeX Live (xelatex + fontspec + microtype + multicol
-# + amsmath + needspace + Latin Modern), poppler for previews, Python 3, Node
-# for the Gemini CLI, and a few build-essentials trafilatura wants.
+# System packages: typst, poppler for previews, Python 3, and a few build-essentials trafilatura wants.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl \
-        texlive-xetex texlive-fonts-recommended texlive-latex-extra \
-        texlive-lang-european \
-        lmodern \
+        ca-certificates curl xz-utils \
         poppler-utils \
         python3 python3-pip python3-venv \
         build-essential \
     && rm -rf /var/lib/apt/lists/*
+
+RUN curl -sL https://github.com/typst/typst/releases/download/v0.11.1/typst-x86_64-unknown-linux-musl.tar.xz \
+    | tar -xJ --strip-components=1 -C /usr/local/bin typst-x86_64-unknown-linux-musl/typst
 
 WORKDIR /app
 

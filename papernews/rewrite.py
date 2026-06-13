@@ -29,7 +29,7 @@ _SYSTEM = (
     "- Do NOT translate code, identifiers, or file paths even when translating the surrounding prose.\n"
     "\n"
     "MATH (CRITICAL):\n"
-    "- Preserve LaTeX math expressions EXACTLY as they appear, including the delimiters. Common forms: $x$, $$x$$, \\(x\\), \\[x\\].\n"
+    "- Preserve Typst / LaTeX math expressions EXACTLY as they appear, including the delimiters. Common forms: $x$, $$x$$, \\(x\\), \\[x\\].\n"
     "- Do NOT translate, escape, modify, or strip math content. Pass it through unchanged.\n"
     "- Do NOT wrap math in backticks. Math delimiters are sufficient.\n"
     "\n"

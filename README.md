@@ -13,7 +13,7 @@ typography, generous margins, no color, nothing competing for attention.
 **papernews** is the fix. A script pulls all those feeds, has Gemini clean
 up, translate to English, and rewrite the article bodies — the **full
 text**, not just summaries — and renders the result into one consistently
-typeset LaTeX PDF. Every article is *in* the PDF; you read entirely
+typeset Typst PDF. Every article is *in* the PDF; you read entirely
 offline, no clicking through, no opening tabs.
 
 A side benefit I didn't expect to like but very much do: one place to read
@@ -219,7 +219,7 @@ A 100–200 page PDF with:
            └──────────┬──────────┘
                      ▼
               ┌──────────┐
-              │  render  │ ── xelatex
+              │  render  │ ── typst
               └────┬─────┘
                    ▼
              archive/cache/<hash>.pdf
@@ -237,7 +237,7 @@ Four stages, each idempotent and resumable:
    article body for the renderer. Preserves code fences and `$math$` exactly.
 4. **render** — pulls the latest N articles per source from the store,
    plus fresh world news + quote + DYK, and runs them through a Jinja
-   template into xelatex → PDF. Results are cached by a hash of "what's in
+   template into Typst → PDF. Results are cached by a hash of "what's in
    the store" + "what's in sources.toml". Same content + same config → same
    cached PDF served instantly.
 
@@ -425,30 +425,27 @@ export GEMINI_API_KEY=AIzaSy...   # or: export LLM_BACKEND=ollama OLLAMA_HOST=..
 .venv/bin/python -m papernews gather       # fetch + extract
 .venv/bin/python -m papernews summarize    # LLM pass 1 (batched)
 .venv/bin/python -m papernews rewrite      # LLM pass 2 (batched)
-.venv/bin/python -m papernews render       # xelatex → PDF
+.venv/bin/python -m papernews render       # Typst → PDF
 # or all of the above in sequence:
 .venv/bin/python -m papernews build
 ```
 
-Requirements: Python 3.11+, `xelatex` (TeX Live with `texlive-xetex`,
-`texlive-latex-extra`, `lmodern`), `pdftoppm` (poppler).
+Requirements: Python 3.11+, `typst`, `pdftoppm` (poppler).
 
 ## Customizing the typography
 
-Everything visual lives in one file: [`papernews/template.tex.j2`](papernews/template.tex.j2).
+Everything visual lives in one file: [`papernews/template.typ.j2`](papernews/template.typ.j2).
 
-- Page size: `paperwidth=203mm, paperheight=270mm` (tuned for Boox Note Max)
-- Body font: Latin Modern Roman 11pt
+- Page size: `width: 203mm, height: 270mm` (tuned for Boox Note Max)
+- Body font: New Computer Modern 11pt
 - Two-column body for any article over 2000 characters; single-column
   otherwise
-- First-line paragraph indent instead of vertical `\parskip` (classic
+- First-line paragraph indent instead of vertical parskip (classic
   magazine convention)
-- Microtype protrusion + expansion
-- Letter-spacing on small-caps source labels via fontspec's `LetterSpace`
+- Letter-spacing on small-caps source labels via `tracking`
 
-Customize whatever you like — the Jinja delimiters are LaTeX-safe
-(`((* ... *))` for blocks, `((( ... )))` for variables) so your `{`, `}` and
-`\` don't fight each other.
+Customize whatever you like — the Jinja delimiters are Typst-safe
+(`((* ... *))` for blocks, `((( ... )))` for variables) so your `#`, `{`, and `}` don't fight each other.
 
 ## Cost
 
@@ -491,12 +488,12 @@ papernews/
 │   ├── rewrite.py        # rewrite prompts + batching
 │   ├── wiki.py           # World news / Quote / DYK / tech feeds
 │   ├── store.py          # SQLite article store + queries
-│   ├── render.py         # Jinja + xelatex
+│   ├── render.py         # Jinja + Typst
 │   ├── preview.py        # PDF → PNG via pdftoppm
 │   ├── cache.py          # On-disk cache by content hash
 │   ├── cli.py            # papernews command
 │   ├── web.py            # Flask + APScheduler
-│   └── template.tex.j2   # the magazine
+│   └── template.typ.j2   # the magazine
 ├── sources.toml          # configured feeds
 ├── pyproject.toml
 ├── Dockerfile
