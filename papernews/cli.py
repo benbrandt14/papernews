@@ -225,18 +225,34 @@ def _gather_decorations() -> dict:
     return decorations
 
 
-def _collect_current_edition(store: Store, sources: list[dict]) -> list[dict]:
+def _collect_current_edition(store: Store, sources: list[dict], render_date: str) -> list[dict]:
     """Pick the latest N articles per source (N = source.limit), in source
     config order. Returns render-ready dicts."""
     out: list[dict] = []
     for src in sources:
         name = src["name"]
         limit = int(src.get("limit", 10))
-        rows = store.latest_per_source(name, limit)
+        # Fetch all articles without a limit
+        rows = store.latest_per_source(name, limit=None)
+
+        filtered_rows = []
         for r in rows:
+            # Extensible filter pipeline
+            # Filter 1: prevent previously published articles from being reused
+            # An article is valid if it hasn't been rendered yet, or if it was rendered today.
+            if r["rendered_at"] is not None and r["rendered_at"] != render_date:
+                continue
+
+            filtered_rows.append(r)
+
+        # Apply limit after filtering
+        selected_rows = filtered_rows[:limit]
+
+        for r in selected_rows:
             out.append({
                 "source": r["source"],
                 "url": r["url"],
+                "url_hash": r["url_hash"],
                 "title": r["title"],
                 "text": r["body"] if r["body"] else r["text"],
                 "summary": r["summary"],
@@ -256,7 +272,7 @@ def cmd_render(
     No time-window filter, no read state. PDF reflects whatever is currently
     in the store at this moment.
     """
-    articles = _collect_current_edition(store, sources)
+    articles = _collect_current_edition(store, sources, date)
     if not articles:
         _log("[render] no ready articles in store yet")
         return 0
@@ -265,6 +281,11 @@ def cmd_render(
     _log(f"[render] {len(articles)} articles → PDF")
     out_dir.mkdir(parents=True, exist_ok=True)
     pdf = build_pdf(date, articles, out_dir, decorations=decorations)
+
+    # Mark the articles as rendered on this date
+    url_hashes = [a["url_hash"] for a in articles if "url_hash" in a]
+    store.mark_rendered(url_hashes, date)
+
     print(str(pdf))
     return 0
 
