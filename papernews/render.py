@@ -4,6 +4,7 @@ import functools
 import hashlib
 import re
 import shutil
+import subprocess
 import sys
 import urllib.request
 from pathlib import Path
@@ -24,11 +25,12 @@ _TYPST_REPLACE = {
     '"': r'\"',
 }
 
-
 def typst_escape(s) -> str:
     if s is None:
         return ""
-    return "".join(_TYPST_REPLACE.get(c, c) for c in str(s))
+    res = "".join(_TYPST_REPLACE.get(c, c) for c in str(s))
+    # Safely escape # unless it's the specific #table macro we want to allow
+    return re.sub(r'#(?!table\b)', r'\#', res)
 
 
 def typst_url(url: str) -> str:
@@ -41,6 +43,7 @@ _FENCE_RE = re.compile(r"```[a-zA-Z0-9_+\-]*\s*\n?(.*?)```", re.DOTALL)
 _INLINE_RE = re.compile(r"`([^`\n]+)`")
 
 _IMAGE_RE = re.compile(r"!\[([^\]]*)\]\((https?://[^\)]+)\)")
+_LINK_RE = re.compile(r"(?<!\!)\[([^\]]*)\]\(([^\)]+)\)")
 
 _MATH_RE = re.compile(
     r"\$\$(?P<dd>.+?)\$\$"
@@ -54,6 +57,7 @@ _STRONG_RE = re.compile(r"\*\*(?!\s)(.+?)(?<!\s)\*\*")
 _EMPH_RE = re.compile(r"(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)")
 _STRONG_US_RE = re.compile(r"__(?!\s)(.+?)(?<!\s)__")
 _EMPH_US_RE = re.compile(r"(?<![a-zA-Z0-9_])_(?!\s)(.+?)(?<!\s)_(?![a-zA-Z0-9_])")
+
 
 def _stash_typography(text: str) -> tuple[str, list[str]]:
     bits: list[str] = []
@@ -71,6 +75,24 @@ def _stash_typography(text: str) -> tuple[str, list[str]]:
     stashed = _STRONG_US_RE.sub(stash_bold, stashed)
     stashed = _EMPH_US_RE.sub(stash_italic, stashed)
     return stashed, bits
+
+
+def _stash_links(text: str) -> tuple[str, list[str]]:
+    bits: list[str] = []
+
+    def stash(m: re.Match) -> str:
+        raw_text = m.group(1)
+        url = m.group(2)
+        
+        # Protect internal syntax (e.g. typography placeholders) but escape rogue characters
+        safe_text = typst_escape(raw_text)
+        safe_url = typst_url(url)
+        
+        bits.append(f'#link("{safe_url}")[{safe_text}]')
+        return f"\x00LNK{len(bits) - 1}\x00"
+
+    return _LINK_RE.sub(stash, text), bits
+
 
 def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
     bits: list[str] = []
@@ -90,24 +112,40 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
             try:
                 req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
                 with urllib.request.urlopen(req, timeout=10) as response:
-                    ctype = response.info().get_content_type()
-                    ext = ".jpg"
-                    if ctype == "image/png": ext = ".png"
-                    elif ctype == "image/gif": ext = ".gif"
-                    elif ctype == "image/webp": ext = ".webp"
-                    elif ctype == "image/svg+xml": ext = ".svg"
+                    data = response.read()
+                    
+                    # Inspect magic bytes to determine true format
+                    if data.startswith(b'\xff\xd8'):
+                        ext = ".jpg"
+                    elif data.startswith(b'\x89PNG\r\n\x1a\n'):
+                        ext = ".png"
+                    elif data.startswith(b'GIF8'):
+                        ext = ".gif"
+                    elif data.startswith(b'RIFF') and data[8:12] == b'WEBP':
+                        ext = ".webp"
+                    elif b'<svg' in data[:1024].lower():
+                        ext = ".svg"
+                    else:
+                        # Fallback to HTTP header if magic bytes are unrecognized
+                        ctype = response.info().get_content_type()
+                        if ctype == "image/png": ext = ".png"
+                        elif ctype == "image/gif": ext = ".gif"
+                        elif ctype == "image/webp": ext = ".webp"
+                        elif ctype == "image/svg+xml": ext = ".svg"
+                        else: ext = ".jpg"
 
                     filename = f"{url_hash}{ext}"
                     img_path = assets_dir / filename
                     with open(img_path, "wb") as f:
-                        shutil.copyfileobj(response, f)
+                        f.write(data)
+                        
             except Exception as e:
                 sys.stderr.write(f"  [warn] failed to fetch image {url}: {e}\n")
                 bits.append(f"[{alt}]({url})")
                 return f"\x00IMG{len(bits) - 1}\x00"
 
         if alt:
-            safe_alt = typst_escape(alt).replace("#", r"\#")
+            safe_alt = typst_escape(alt)
             caption_str = f', caption: [{safe_alt}]'
         else:
             caption_str = ''
@@ -117,12 +155,14 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
 
     return _IMAGE_RE.sub(stash, text), bits
 
+
 def _render_code_block(code: str) -> str:
     fence_len = 3
     while "`" * fence_len in code:
         fence_len += 1
     fence = "`" * fence_len
     return f"\n\n{fence}\n{code}\n{fence}\n\n"
+
 
 def _process_inline(text: str) -> str:
     parts = _INLINE_RE.split(text)
@@ -162,7 +202,6 @@ def _stash_math(text: str) -> tuple[str, list[str]]:
             is_display = False
 
         if not is_display:
-            # FIX: Inline raw strings in Typst CANNOT contain newlines.
             content = content.replace("\n", " ")
 
         fence_len = 3 if is_display else 1
@@ -176,12 +215,12 @@ def _stash_math(text: str) -> tuple[str, list[str]]:
         if is_display:
             bits.append(f"#mitex({fence}\n{content}\n{fence})")
         else:
-            # FIX: Pad with spaces so a trailing LaTeX backslash doesn't escape the Typst backtick
             bits.append(f"#mi({fence} {content} {fence})")
 
         return f"\x00MB{len(bits) - 1}\x00"
 
     return _MATH_RE.sub(stash, text), bits
+
 
 _LEADING_DATE_RE = re.compile(
     r"^\s*("
@@ -216,6 +255,7 @@ def typst_body(text: str, workdir: Path) -> str:
     stashed, img_bits = _stash_images(stashed, workdir)
     stashed, math_bits = _stash_math(stashed)
     stashed, typ_bits = _stash_typography(stashed)
+    stashed, lnk_bits = _stash_links(stashed)
 
     paras = (
         re.split(r"\n\s*\n+", stashed.strip())
@@ -247,6 +287,11 @@ def typst_body(text: str, workdir: Path) -> str:
             return img_bits[int(mm.group(1))]
         rendered = re.sub(r"\x00IMG(\d+)\x00", expand_img, rendered)
 
+        # Expand Links before Typography, since link text may contain Typography blocks
+        def expand_lnk(mm: re.Match) -> str:
+            return lnk_bits[int(mm.group(1))]
+        rendered = re.sub(r"\x00LNK(\d+)\x00", expand_lnk, rendered)
+
         def expand_typ(mm: re.Match) -> str:
             return typ_bits[int(mm.group(1))]
         rendered = re.sub(r"\x00TYP(\d+)\x00", expand_typ, rendered)
@@ -254,6 +299,7 @@ def typst_body(text: str, workdir: Path) -> str:
         out.append(rendered)
 
     return "\n\n".join(out)
+
 
 def _env(tpl_dir: Path, workdir: Path) -> jinja2.Environment:
     env = jinja2.Environment(
