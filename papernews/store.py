@@ -21,24 +21,26 @@ def _now() -> str:
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS article (
-    url_hash       TEXT PRIMARY KEY,
-    url            TEXT NOT NULL,
-    title          TEXT NOT NULL,
-    title_norm     TEXT NOT NULL,
-    source         TEXT NOT NULL,
-    text           TEXT,              -- NULL if extraction failed (raw trafilatura output)
-    body           TEXT,              -- NULL until rewritten (clean paragraphs)
-    summary        TEXT,              -- NULL until summarized
-    surfaced       TEXT,              -- when the source surfaced it (HN submission / RSS pub)
-    published      TEXT,              -- the article's own publication date (from page metadata)
-    fetched_at     TEXT NOT NULL,
-    extracted_at   TEXT,
-    summarized_at  TEXT,
-    rewritten_at   TEXT,
-    rendered_at    TEXT               -- ISO date of first PDF inclusion; NULL = pending
+    url_hash         TEXT PRIMARY KEY,
+    url              TEXT NOT NULL,
+    title            TEXT NOT NULL,
+    title_norm       TEXT NOT NULL,
+    source           TEXT NOT NULL,
+    text             TEXT,              -- NULL if extraction failed
+    body             TEXT,              -- NULL until rewritten
+    summary          TEXT,              -- NULL until summarized
+    surfaced         TEXT,              
+    published        TEXT,              
+    fetched_at       TEXT NOT NULL,
+    extracted_at     TEXT,
+    summarized_at    TEXT,
+    rewritten_at     TEXT,
+    rendered_at      TEXT,              
+    selection_status INTEGER DEFAULT 0  -- 0: pending, 1: selected, -1: rejected
 );
 CREATE INDEX IF NOT EXISTS idx_title_norm  ON article(title_norm);
 CREATE INDEX IF NOT EXISTS idx_rendered_at ON article(rendered_at);
+CREATE INDEX IF NOT EXISTS idx_selection   ON article(selection_status);
 """
 
 
@@ -52,6 +54,8 @@ def _migrate(con) -> None:
         con.execute("ALTER TABLE article ADD COLUMN surfaced TEXT")
     if "published" not in cols:
         con.execute("ALTER TABLE article ADD COLUMN published TEXT")
+    if "selection_status" not in cols:
+        con.execute("ALTER TABLE article ADD COLUMN selection_status INTEGER DEFAULT 0")
     con.commit()
 
 
@@ -96,7 +100,6 @@ class Store:
                 now if text is not None else None,
             ),
         )
-        # Back-fill date fields on rows that exist but lack them (re-gather).
         if surfaced:
             self.con.execute(
                 "UPDATE article SET surfaced = ? WHERE url_hash = ? AND surfaced IS NULL",
@@ -109,6 +112,31 @@ class Store:
             )
         self.con.commit()
 
+    # --- select --------------------------------------------------------------
+
+    def pending_selection(self, source: str) -> list[sqlite3.Row]:
+        cur = self.con.execute(
+            """
+            SELECT url_hash, source, url, title, text
+              FROM article
+             WHERE source = ?
+               AND selection_status = 0
+               AND text IS NOT NULL
+             ORDER BY fetched_at ASC
+            """,
+            (source,)
+        )
+        return list(cur.fetchall())
+
+    def set_selection_status(self, url_hashes: list[str], status: int) -> None:
+        if not url_hashes:
+            return
+        self.con.executemany(
+            "UPDATE article SET selection_status = ? WHERE url_hash = ?",
+            [(status, h) for h in url_hashes],
+        )
+        self.con.commit()
+
     # --- summarize -----------------------------------------------------------
 
     def pending_summary(self) -> list[sqlite3.Row]:
@@ -118,6 +146,7 @@ class Store:
               FROM article
              WHERE summary IS NULL
                AND text    IS NOT NULL
+               AND selection_status = 1
              ORDER BY fetched_at ASC
             """
         )
@@ -139,6 +168,7 @@ class Store:
               FROM article
              WHERE body IS NULL
                AND text IS NOT NULL
+               AND selection_status = 1
              ORDER BY fetched_at ASC
             """
         )
@@ -162,13 +192,12 @@ class Store:
              WHERE rendered_at IS NULL
                AND summary     IS NOT NULL
                AND text        IS NOT NULL
+               AND selection_status = 1
             """
         )
         return list(cur.fetchall())
 
     def latest_per_source(self, source: str, limit: int) -> list[sqlite3.Row]:
-        """Most recent `limit` ready (text + summary) articles for source,
-        ordered newest first by best available date."""
         cur = self.con.execute(
             """
             SELECT url_hash, source, url, title, text, body, summary,
@@ -178,6 +207,7 @@ class Store:
                AND text     IS NOT NULL
                AND summary  IS NOT NULL
                AND rendered_at IS NULL
+               AND selection_status = 1
              ORDER BY COALESCE(published, surfaced, fetched_at) DESC
              LIMIT ?
             """,
@@ -186,13 +216,14 @@ class Store:
         return list(cur.fetchall())
 
     def max_fetched_at(self) -> str:
-        """Latest fetched_at timestamp in the store (for cache keying)."""
         row = self.con.execute(
             "SELECT COALESCE(MAX(fetched_at), '') FROM article"
         ).fetchone()
         return row[0] or ""
 
     def mark_rendered(self, url_hashes: list[str], date: str) -> None:
+        if not url_hashes:
+            return
         self.con.executemany(
             "UPDATE article SET rendered_at = ? WHERE url_hash = ?",
             [(date, h) for h in url_hashes],
@@ -206,8 +237,10 @@ class Store:
         return {
             "total":            c("SELECT COUNT(*) FROM article").fetchone()[0],
             "unreadable":       c("SELECT COUNT(*) FROM article WHERE text IS NULL").fetchone()[0],
-            "pending_summary":  c("SELECT COUNT(*) FROM article WHERE summary IS NULL AND text IS NOT NULL").fetchone()[0],
-            "pending_rewrite":  c("SELECT COUNT(*) FROM article WHERE body    IS NULL AND text IS NOT NULL").fetchone()[0],
-            "pending_render":   c("SELECT COUNT(*) FROM article WHERE rendered_at IS NULL AND summary IS NOT NULL AND text IS NOT NULL").fetchone()[0],
+            "pending_select":   c("SELECT COUNT(*) FROM article WHERE selection_status = 0 AND text IS NOT NULL").fetchone()[0],
+            "rejected":         c("SELECT COUNT(*) FROM article WHERE selection_status = -1").fetchone()[0],
+            "pending_summary":  c("SELECT COUNT(*) FROM article WHERE summary IS NULL AND text IS NOT NULL AND selection_status = 1").fetchone()[0],
+            "pending_rewrite":  c("SELECT COUNT(*) FROM article WHERE body    IS NULL AND text IS NOT NULL AND selection_status = 1").fetchone()[0],
+            "pending_render":   c("SELECT COUNT(*) FROM article WHERE rendered_at IS NULL AND summary IS NOT NULL AND text IS NOT NULL AND selection_status = 1").fetchone()[0],
             "rendered":         c("SELECT COUNT(*) FROM article WHERE rendered_at IS NOT NULL").fetchone()[0],
         }

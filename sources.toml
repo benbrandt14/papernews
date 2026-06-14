@@ -119,12 +119,6 @@ url   = "https://lucumr.pocoo.org/feed.atom"
 limit = 1
 
 [[source]]
-name  = "Rust Blog"
-kind  = "rss"
-url   = "https://blog.rust-lang.org/feed.xml"
-limit = 1
-
-[[source]]
 name  = "Julia Evans"
 kind  = "rss"
 url   = "https://jvns.ca/atom.xml"
@@ -152,6 +146,7 @@ kind  = "rss"
 url   = "https://www.35mmc.com/feed/"
 limit = 1
 
+
 # --- Aggregator (last on purpose; mostly social, occasional gems) --------
 
 [[source]]
@@ -167,3 +162,10 @@ kind  = "rss"
 url   = "https://hackaday.com/blog/feed/"
 limit = 4
 since_hours = 48
+
+[preferences]
+prefer_category = ["space", "reinforcement learning", "cognitive science", "science", "scientific computing", "applied mathematics", "mechanical engineering", "robotics", "modular synthesis", "biology/ecology", "architecture", "systems", "control theory, dynamics", "state estimation"]
+less_prefer_category = ["war", "raspberry pi", "security", "genetics", "politics", "economics", "automotive"]
+blacklist_words = ["Anthropic", "OpenAI", "Claude", "ChatGPT", "agentic"]
+interest = ["articles with technical depth and novelty", "articles with a unique, earned perspective", "Realistic and accurate AI news without hype","updates to tools I use (Matlab/Simulink, Julia, Wolfram Alpha)"]
+disinterest = ["sensationalism and repetitive verbosity"]
