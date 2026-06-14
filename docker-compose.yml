@@ -5,24 +5,20 @@ services:
     container_name: papernews
     restart: unless-stopped
     environment:
-      # LLM backend — "gemini" (default) or "ollama" (bring your own Ollama instance)
       - LLM_BACKEND=${LLM_BACKEND:-gemini}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      # `host.docker.internal` reaches an Ollama running on the host. On
-      # Docker Desktop (Mac/Windows) this resolves automatically; the
-      # extra_hosts entry below is what makes it work on Linux too.
       - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral}
       - INGEST_INTERVAL_SECONDS=${INGEST_INTERVAL_SECONDS:-14400}
       - PAPERNEWS_WORKERS=${PAPERNEWS_WORKERS:-8}
-      # Hook to push the PDF to Boox Note after each ingest
       - POST_INGEST_HOOK=${POST_INGEST_HOOK:-}
       - POST_INGEST_HOOK_TIMEOUT=${POST_INGEST_HOOK_TIMEOUT:-300}
     volumes:
       - ./data:/data
       - ./sources.toml:/app/sources.toml:ro
+      # Bind mount the live code directory for hot reloading
+      - ./papernews:/app/papernews:ro
     extra_hosts:
-      # Lets `OLLAMA_HOST=http://host.docker.internal:...` work on Linux.
       - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"

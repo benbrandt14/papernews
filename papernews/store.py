@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS article (
     rendered_at      TEXT,              
     selection_status INTEGER DEFAULT 0  -- 0: pending, 1: selected, -1: rejected
 );
+"""
+
+_INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_title_norm  ON article(title_norm);
 CREATE INDEX IF NOT EXISTS idx_rendered_at ON article(rendered_at);
 CREATE INDEX IF NOT EXISTS idx_selection   ON article(selection_status);
@@ -66,8 +69,15 @@ class Store:
     def __init__(self, path: Path):
         self.con = sqlite3.connect(str(path))
         self.con.row_factory = sqlite3.Row
+        
+        # 1. Create base tables
         self.con.executescript(_SCHEMA)
+        
+        # 2. Run migrations (adds missing columns to old DBs)
         _migrate(self.con)
+        
+        # 3. Create indexes (now guaranteed that the columns exist)
+        self.con.executescript(_INDEXES)
 
     def sync_categories(self, source_category_map: dict[str, str]) -> None:
         """Retroactively update categories in the DB to match current sources.toml"""

@@ -173,6 +173,12 @@ def create_app() -> Flask:
     def healthz():
         return "ok", 200
 
+    @app.get("/debug/db")
+    def debug_db():
+        """Returns the current article counts and state from the database."""
+        store = Store(STATE_PATH)
+        return jsonify(store.counts())
+
     @app.get("/")
     def index():
         return _LANDING_HTML, 200, {"Content-Type": "text/html; charset=utf-8"}
