@@ -98,17 +98,24 @@ def _build_pdf_for_key(key: str, store: Store, sources: list[dict]) -> Path:
         if out.exists():
             return out
         ensure_dir(CACHE_DIR)
-        articles = _collect_current_edition(store, sources)
+
+        date_str = date.today().isoformat()
+        articles = _collect_current_edition(store, sources, date_str)
         decorations = _gather_decorations()
         # Use the cache dir as build workdir so .build/ stays beside the PDF.
         tmp_pdf = build_pdf(
-            date.today().isoformat(),
+            date_str,
             articles,
             CACHE_DIR,
             decorations=decorations,
         )
         if tmp_pdf != out:
             tmp_pdf.replace(out)
+
+        # Mark the articles as rendered today
+        url_hashes = [a["url_hash"] for a in articles if "url_hash" in a]
+        store.mark_rendered(url_hashes, date_str)
+
     return out
 
 
