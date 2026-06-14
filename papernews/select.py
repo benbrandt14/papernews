@@ -29,7 +29,7 @@ def select_articles(category_name: str, rows: list[sqlite3.Row], limit: int, pre
     # --- Stage 1: Hard Filter ---
     # Only reject articles that are functionally useless (e.g., extraction failed/too short)
     for r in rows:
-        if len(r["text"]) < 200: # should still allow abstracts through
+        if len(r["text"]) < 500: % Remove entries that are too short
             rejected_hashes.append(r["url_hash"])
         else:
             surviving.append(r)

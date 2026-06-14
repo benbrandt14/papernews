@@ -87,19 +87,7 @@ def cmd_gather(store: Store, sources: list[dict]) -> int:
             
             text = art.text if art else None
             
-            # --- NEW: RSS Fallback Engine ---
-            # If the site blocks scrapers or the page is unreadable, fall back to the RSS payload
-            if not text or len(text.strip()) < 100:
-                if getattr(it, "rss_content", None):
-                    import re
-                    # Quickly strip HTML tags to get raw prose
-                    clean_rss = re.sub(r'<[^>]+>', ' ', it.rss_content)
-                    clean_rss = " ".join(clean_rss.split())
-                    if len(clean_rss) >= 50:
-                        text = clean_rss
-            # --------------------------------
-            
-            if not text or len(text.strip()) < 100:
+            if not text or len(text.strip()) < 200:
                 store.insert_raw(
                     source=it.source, category=category, url=it.url, title=it.title,
                     text=None, surfaced=it.surfaced,
