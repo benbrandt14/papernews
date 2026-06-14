@@ -22,7 +22,9 @@ def extract(url: str, title: str, source: str) -> Article | None:
     text = trafilatura.extract(
         downloaded,
         include_comments=False,
-        include_tables=False,
+        include_tables=True,
+        include_links=True,
+        include_images=True,
         favor_precision=True,
     )
     if not text or len(text) < 200:

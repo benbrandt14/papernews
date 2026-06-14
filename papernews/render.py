@@ -4,7 +4,6 @@ import functools
 import hashlib
 import re
 import shutil
-import subprocess
 import sys
 import urllib.request
 from pathlib import Path
@@ -80,32 +79,23 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
         alt = m.group(1)
         url = m.group(2)
 
-        # Create hash-based filename for downloaded image
         url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
-
         assets_dir = workdir / "assets"
         assets_dir.mkdir(parents=True, exist_ok=True)
 
-        # We don't know the exact extension yet if we haven't downloaded it,
-        # but we can look for existing files with this hash
         existing = list(assets_dir.glob(f"{url_hash}.*"))
         if existing:
             filename = existing[0].name
         else:
             try:
-                # Add a basic User-Agent to avoid easy 403s
                 req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
                 with urllib.request.urlopen(req, timeout=10) as response:
                     ctype = response.info().get_content_type()
                     ext = ".jpg"
-                    if ctype == "image/png":
-                        ext = ".png"
-                    elif ctype == "image/gif":
-                        ext = ".gif"
-                    elif ctype == "image/webp":
-                        ext = ".webp"
-                    elif ctype == "image/svg+xml":
-                        ext = ".svg"
+                    if ctype == "image/png": ext = ".png"
+                    elif ctype == "image/gif": ext = ".gif"
+                    elif ctype == "image/webp": ext = ".webp"
+                    elif ctype == "image/svg+xml": ext = ".svg"
 
                     filename = f"{url_hash}{ext}"
                     img_path = assets_dir / filename
@@ -113,12 +103,16 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
                         shutil.copyfileobj(response, f)
             except Exception as e:
                 sys.stderr.write(f"  [warn] failed to fetch image {url}: {e}\n")
-                # Fallback to just the text if image fails to download
                 bits.append(f"[{alt}]({url})")
                 return f"\x00IMG{len(bits) - 1}\x00"
 
-        # Note: Typst requires image paths relative to the project root/workdir or absolute
-        bits.append(f'#figure(image("assets/{filename}", width: 80%), caption: [{alt}])')
+        if alt:
+            safe_alt = typst_escape(alt).replace("#", r"\#")
+            caption_str = f', caption: [{safe_alt}]'
+        else:
+            caption_str = ''
+
+        bits.append(f'#figure(image("assets/{filename}", width: 80%){caption_str})')
         return f"\x00IMG{len(bits) - 1}\x00"
 
     return _IMAGE_RE.sub(stash, text), bits
@@ -141,7 +135,12 @@ def _process_inline(text: str) -> str:
             while "`" * fence_len in part:
                 fence_len += 1
             fence = "`" * fence_len
-            out.append(f"{fence}{part}{fence}")
+            
+            safe_part = part
+            if safe_part.startswith("`"): safe_part = " " + safe_part
+            if safe_part.endswith("`") or safe_part.endswith("\\"): safe_part = safe_part + " "
+            
+            out.append(f"{fence}{safe_part}{fence}")
     return "".join(out)
 
 
@@ -162,24 +161,23 @@ def _stash_math(text: str) -> tuple[str, list[str]]:
             content = m.group("pr").strip()
             is_display = False
 
-        # Use dynamic backtick fencing to safely encapsulate the raw LaTeX
-        # Typst supports 1 backtick (inline code) or 3+ backticks (code block)
+        if not is_display:
+            # FIX: Inline raw strings in Typst CANNOT contain newlines.
+            content = content.replace("\n", " ")
+
         fence_len = 3 if is_display else 1
         while "`" * fence_len in content:
             fence_len += 1
-        # Typst requires block code strings to be at least 3 backticks, inline can be 1 or more but let's stick to 1 or 3+
         if fence_len == 2:
             fence_len = 3
 
         fence = "`" * fence_len
         
         if is_display:
-            # We add \n so backticks don't merge if content starts/ends with `
             bits.append(f"#mitex({fence}\n{content}\n{fence})")
         else:
-            space_start = " " if content.startswith("`") else ""
-            space_end = " " if content.endswith("`") else ""
-            bits.append(f"#mi({fence}{space_start}{content}{space_end}{fence})")
+            # FIX: Pad with spaces so a trailing LaTeX backslash doesn't escape the Typst backtick
+            bits.append(f"#mi({fence} {content} {fence})")
 
         return f"\x00MB{len(bits) - 1}\x00"
 
