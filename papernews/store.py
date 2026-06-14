@@ -166,24 +166,23 @@ class Store:
         )
         return list(cur.fetchall())
 
-    def latest_per_source(self, source: str, limit: int | None = None) -> list[sqlite3.Row]:
+    def latest_per_source(self, source: str, limit: int) -> list[sqlite3.Row]:
         """Most recent `limit` ready (text + summary) articles for source,
         ordered newest first by best available date."""
-        query = """
+        cur = self.con.execute(
+            """
             SELECT url_hash, source, url, title, text, body, summary,
-                   surfaced, published, fetched_at, rendered_at
+                   surfaced, published, fetched_at
               FROM article
              WHERE source = ?
                AND text     IS NOT NULL
                AND summary  IS NOT NULL
+               AND rendered_at IS NULL
              ORDER BY COALESCE(published, surfaced, fetched_at) DESC
-        """
-        if limit is not None:
-            query += " LIMIT ?"
-            cur = self.con.execute(query, (source, limit))
-        else:
-            cur = self.con.execute(query, (source,))
-
+             LIMIT ?
+            """,
+            (source, limit),
+        )
         return list(cur.fetchall())
 
     def max_fetched_at(self) -> str:

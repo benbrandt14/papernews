@@ -81,7 +81,9 @@ def cmd_gather(store: Store, sources: list[dict]) -> int:
                 )
                 failed_count += 1
                 continue
-            if art is None:
+            
+            # Ensure text has substantial content to prevent LLM drop-offs
+            if art is None or not art.text or not art.text.strip():
                 store.insert_raw(
                     it.source, it.url, it.title,
                     text=None, surfaced=it.surfaced,
@@ -89,8 +91,6 @@ def cmd_gather(store: Store, sources: list[dict]) -> int:
                 failed_count += 1
                 _log(f"  - {it.title[:70]}  (no readable content)")
             else:
-                # Prefer the article's own date; fall back to the surfacing
-                # date so we always have something to display.
                 pub = art.published or it.surfaced
                 store.insert_raw(
                     it.source, it.url, it.title,
@@ -125,6 +125,9 @@ def cmd_summarize(store: Store, workers: int) -> int:
     def _run_batch(rows: list) -> list[tuple[str, str]]:
         items = [(r["title"], r["text"]) for r in rows]
         out = summarize_batch(items)
+        # Failsafe: Prevent array shifts from LLM anomalies from corrupting the DB
+        if len(out) != len(rows):
+            raise ValueError(f"LLM returned {len(out)} items, expected {len(rows)}. Aborting batch to prevent off-by-one misalignment.")
         return [(rows[i]["url_hash"], out[i]) for i in range(len(rows))]
 
     done = 0
@@ -164,6 +167,8 @@ def cmd_rewrite(store: Store, workers: int) -> int:
     def _run_batch(rows: list) -> list[tuple[str, str]]:
         items = [(r["title"], r["text"]) for r in rows]
         out = rewrite_batch(items)
+        if len(out) != len(rows):
+            raise ValueError(f"LLM returned {len(out)} items, expected {len(rows)}. Aborting batch to prevent off-by-one misalignment.")
         return [(rows[i]["url_hash"], out[i]) for i in range(len(rows))]
 
     done = 0
@@ -225,34 +230,19 @@ def _gather_decorations() -> dict:
     return decorations
 
 
-def _collect_current_edition(store: Store, sources: list[dict], render_date: str) -> list[dict]:
+def _collect_current_edition(store: Store, sources: list[dict]) -> list[dict]:
     """Pick the latest N articles per source (N = source.limit), in source
     config order. Returns render-ready dicts."""
     out: list[dict] = []
     for src in sources:
         name = src["name"]
         limit = int(src.get("limit", 10))
-        # Fetch all articles without a limit
-        rows = store.latest_per_source(name, limit=None)
-
-        filtered_rows = []
+        rows = store.latest_per_source(name, limit)
         for r in rows:
-            # Extensible filter pipeline
-            # Filter 1: prevent previously published articles from being reused
-            # An article is valid if it hasn't been rendered yet, or if it was rendered today.
-            if r["rendered_at"] is not None and r["rendered_at"] != render_date:
-                continue
-
-            filtered_rows.append(r)
-
-        # Apply limit after filtering
-        selected_rows = filtered_rows[:limit]
-
-        for r in selected_rows:
             out.append({
+                "url_hash": r["url_hash"], # Expose hash for tracking render status
                 "source": r["source"],
                 "url": r["url"],
-                "url_hash": r["url_hash"],
                 "title": r["title"],
                 "text": r["body"] if r["body"] else r["text"],
                 "summary": r["summary"],
@@ -272,7 +262,7 @@ def cmd_render(
     No time-window filter, no read state. PDF reflects whatever is currently
     in the store at this moment.
     """
-    articles = _collect_current_edition(store, sources, date)
+    articles = _collect_current_edition(store, sources)
     if not articles:
         _log("[render] no ready articles in store yet")
         return 0
@@ -281,11 +271,11 @@ def cmd_render(
     _log(f"[render] {len(articles)} articles → PDF")
     out_dir.mkdir(parents=True, exist_ok=True)
     pdf = build_pdf(date, articles, out_dir, decorations=decorations)
-
-    # Mark the articles as rendered on this date
-    url_hashes = [a["url_hash"] for a in articles if "url_hash" in a]
-    store.mark_rendered(url_hashes, date)
-
+    
+    # Track rendered files to prevent re-publication on subsequent days
+    hashes = [a["url_hash"] for a in articles]
+    store.mark_rendered(hashes, date)
+    
     print(str(pdf))
     return 0
 
