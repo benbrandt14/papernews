@@ -4,7 +4,6 @@ import functools
 import hashlib
 import re
 import shutil
-import subprocess
 import sys
 import urllib.request
 from pathlib import Path
@@ -63,11 +62,12 @@ def _stash_typography(text: str) -> tuple[str, list[str]]:
     bits: list[str] = []
 
     def stash_bold(m: re.Match) -> str:
-        bits.append(f"#strong[{m.group(1)}]")
+        # /**/ protects the macro from accidentally absorbing trailing punctuation like ( or [
+        bits.append(f"#strong[{m.group(1)}]/**/")
         return f"\x00TYP{len(bits) - 1}\x00"
 
     def stash_italic(m: re.Match) -> str:
-        bits.append(f"#emph[{m.group(1)}]")
+        bits.append(f"#emph[{m.group(1)}]/**/")
         return f"\x00TYP{len(bits) - 1}\x00"
 
     stashed = _STRONG_RE.sub(stash_bold, text)
@@ -84,11 +84,10 @@ def _stash_links(text: str) -> tuple[str, list[str]]:
         raw_text = m.group(1)
         url = m.group(2)
         
-        # Protect internal syntax (e.g. typography placeholders) but escape rogue characters
         safe_text = typst_escape(raw_text)
         safe_url = typst_url(url)
         
-        bits.append(f'#link("{safe_url}")[{safe_text}]')
+        bits.append(f'#link("{safe_url}")[{safe_text}]/**/')
         return f"\x00LNK{len(bits) - 1}\x00"
 
     return _LINK_RE.sub(stash, text), bits
@@ -114,19 +113,12 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
                 with urllib.request.urlopen(req, timeout=10) as response:
                     data = response.read()
                     
-                    # Inspect magic bytes to determine true format
-                    if data.startswith(b'\xff\xd8'):
-                        ext = ".jpg"
-                    elif data.startswith(b'\x89PNG\r\n\x1a\n'):
-                        ext = ".png"
-                    elif data.startswith(b'GIF8'):
-                        ext = ".gif"
-                    elif data.startswith(b'RIFF') and data[8:12] == b'WEBP':
-                        ext = ".webp"
-                    elif b'<svg' in data[:1024].lower():
-                        ext = ".svg"
+                    if data.startswith(b'\xff\xd8'): ext = ".jpg"
+                    elif data.startswith(b'\x89PNG\r\n\x1a\n'): ext = ".png"
+                    elif data.startswith(b'GIF8'): ext = ".gif"
+                    elif data.startswith(b'RIFF') and data[8:12] == b'WEBP': ext = ".webp"
+                    elif b'<svg' in data[:1024].lower(): ext = ".svg"
                     else:
-                        # Fallback to HTTP header if magic bytes are unrecognized
                         ctype = response.info().get_content_type()
                         if ctype == "image/png": ext = ".png"
                         elif ctype == "image/gif": ext = ".gif"
@@ -141,7 +133,9 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
                         
             except Exception as e:
                 sys.stderr.write(f"  [warn] failed to fetch image {url}: {e}\n")
-                bits.append(f"[{alt}]({url})")
+                safe_alt = typst_escape(alt)
+                safe_url = typst_url(url)
+                bits.append(f'#link("{safe_url}")[{safe_alt}]/**/')
                 return f"\x00IMG{len(bits) - 1}\x00"
 
         if alt:
@@ -150,7 +144,7 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
         else:
             caption_str = ''
 
-        bits.append(f'#figure(image("assets/{filename}", width: 80%){caption_str})')
+        bits.append(f'#figure(image("assets/{filename}", width: 80%){caption_str})/**/')
         return f"\x00IMG{len(bits) - 1}\x00"
 
     return _IMAGE_RE.sub(stash, text), bits
@@ -162,26 +156,6 @@ def _render_code_block(code: str) -> str:
         fence_len += 1
     fence = "`" * fence_len
     return f"\n\n{fence}\n{code}\n{fence}\n\n"
-
-
-def _process_inline(text: str) -> str:
-    parts = _INLINE_RE.split(text)
-    out = []
-    for i, part in enumerate(parts):
-        if i % 2 == 0:
-            out.append(typst_escape(part))
-        else:
-            fence_len = 1
-            while "`" * fence_len in part:
-                fence_len += 1
-            fence = "`" * fence_len
-            
-            safe_part = part
-            if safe_part.startswith("`"): safe_part = " " + safe_part
-            if safe_part.endswith("`") or safe_part.endswith("\\"): safe_part = safe_part + " "
-            
-            out.append(f"{fence}{safe_part}{fence}")
-    return "".join(out)
 
 
 def _stash_math(text: str) -> tuple[str, list[str]]:
@@ -213,9 +187,9 @@ def _stash_math(text: str) -> tuple[str, list[str]]:
         fence = "`" * fence_len
         
         if is_display:
-            bits.append(f"#mitex({fence}\n{content}\n{fence})")
+            bits.append(f"#mitex({fence}\n{content}\n{fence})/**/")
         else:
-            bits.append(f"#mi({fence} {content} {fence})")
+            bits.append(f"#mi({fence} {content} {fence})/**/")
 
         return f"\x00MB{len(bits) - 1}\x00"
 
@@ -252,6 +226,22 @@ def typst_body(text: str, workdir: Path) -> str:
         return f"\x00CB{len(blocks) - 1}\x00"
 
     stashed = _FENCE_RE.sub(stash_code, text)
+
+    inline_code_bits: list[str] = []
+    def stash_inline(m: re.Match) -> str:
+        part = m.group(1)
+        fence_len = 1
+        while "`" * fence_len in part:
+            fence_len += 1
+        fence = "`" * fence_len
+        safe_part = part
+        if safe_part.startswith("`"): safe_part = " " + safe_part
+        if safe_part.endswith("`") or safe_part.endswith("\\"): safe_part = safe_part + " "
+        inline_code_bits.append(f"{fence}{safe_part}{fence}")
+        return f"\x00IC{len(inline_code_bits) - 1}\x00"
+    
+    stashed = _INLINE_RE.sub(stash_inline, stashed)
+
     stashed, img_bits = _stash_images(stashed, workdir)
     stashed, math_bits = _stash_math(stashed)
     stashed, typ_bits = _stash_typography(stashed)
@@ -267,34 +257,27 @@ def typst_body(text: str, workdir: Path) -> str:
         p = p.strip()
         if not p:
             continue
-        m = re.fullmatch(r"\x00CB(\d+)\x00", p)
-        if m:
-            out.append(_render_code_block(blocks[int(m.group(1))]))
-            continue
+        
+        rendered = typst_escape(p)
 
-        def expand_code(mm: re.Match) -> str:
-            return _render_code_block(blocks[int(mm.group(1))])
+        def expand_cb(mm: re.Match) -> str: return _render_code_block(blocks[int(mm.group(1))])
+        def expand_ic(mm: re.Match) -> str: return inline_code_bits[int(mm.group(1))]
+        def expand_img(mm: re.Match) -> str: return img_bits[int(mm.group(1))]
+        def expand_math(mm: re.Match) -> str: return math_bits[int(mm.group(1))]
+        def expand_lnk(mm: re.Match) -> str: return lnk_bits[int(mm.group(1))]
+        def expand_typ(mm: re.Match) -> str: return typ_bits[int(mm.group(1))]
 
-        p = re.sub(r"\x00CB(\d+)\x00", expand_code, p)
-
-        rendered = _process_inline(p)
-
-        def expand_math(mm: re.Match) -> str:
-            return math_bits[int(mm.group(1))]
-        rendered = re.sub(r"\x00MB(\d+)\x00", expand_math, rendered)
-
-        def expand_img(mm: re.Match) -> str:
-            return img_bits[int(mm.group(1))]
-        rendered = re.sub(r"\x00IMG(\d+)\x00", expand_img, rendered)
-
-        # Expand Links before Typography, since link text may contain Typography blocks
-        def expand_lnk(mm: re.Match) -> str:
-            return lnk_bits[int(mm.group(1))]
-        rendered = re.sub(r"\x00LNK(\d+)\x00", expand_lnk, rendered)
-
-        def expand_typ(mm: re.Match) -> str:
-            return typ_bits[int(mm.group(1))]
-        rendered = re.sub(r"\x00TYP(\d+)\x00", expand_typ, rendered)
+        # Iterative expansion to seamlessly handle nested formatting, like [**Bold Link**](url)
+        while True:
+            old = rendered
+            rendered = re.sub(r"\x00CB(\d+)\x00", expand_cb, rendered)
+            rendered = re.sub(r"\x00IC(\d+)\x00", expand_ic, rendered)
+            rendered = re.sub(r"\x00IMG(\d+)\x00", expand_img, rendered)
+            rendered = re.sub(r"\x00MB(\d+)\x00", expand_math, rendered)
+            rendered = re.sub(r"\x00LNK(\d+)\x00", expand_lnk, rendered)
+            rendered = re.sub(r"\x00TYP(\d+)\x00", expand_typ, rendered)
+            if old == rendered:
+                break
 
         out.append(rendered)
 
@@ -344,6 +327,28 @@ def build_pdf(
         typst.compile(str(typst_path), output=str(pdf_dst))
     except typst.TypstError as e:
         sys.stderr.write(f"\n[error] Typst compilation failed!\n")
+        
+        # Enhanced Debug Context: Read the generated .typ file and print a snippet
+        try:
+            line_match = re.search(r'line (\d+)', str(e), re.IGNORECASE)
+            if not line_match:
+                # Some versions of Typst Python bindings output standard string formats
+                line_match = re.search(r':(\d+):\d+', str(e))
+                
+            if line_match:
+                err_line = int(line_match.group(1))
+                lines = typst_source.split('\n')
+                sys.stderr.write(f"[error] Context around line {err_line}:\n")
+                sys.stderr.write(f"----------------------------------------\n")
+                start = max(0, err_line - 4)
+                end = min(len(lines), err_line + 3)
+                for i in range(start, end):
+                    prefix = ">> " if i + 1 == err_line else "   "
+                    sys.stderr.write(f"{prefix}{i + 1:04d} | {lines[i]}\n")
+                sys.stderr.write(f"----------------------------------------\n")
+        except Exception as dump_e:
+            sys.stderr.write(f"[error] Could not print file context: {dump_e}\n")
+
         sys.stderr.write(f"[error] You can inspect the generated source file here: {typst_path}\n")
         sys.stderr.write(f"[error] Typst error details:\n{e}\n\n")
         raise RuntimeError(f"typst failed on {typst_path}: {e}")
