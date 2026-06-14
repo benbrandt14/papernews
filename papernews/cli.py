@@ -342,6 +342,12 @@ def cmd_render(store: Store, date: str, out_dir: Path, sources: list[dict], pref
     out_dir.mkdir(parents=True, exist_ok=True)
     pdf = build_pdf(date, articles, out_dir, decorations=decorations)
     
+    # Force a constant file name so visual diffs can be versioned seamlessly
+    constant_pdf = out_dir / "papernews.pdf"
+    if pdf.exists() and pdf != constant_pdf:
+        pdf.replace(constant_pdf)
+        pdf = constant_pdf
+    
     hashes = [a["url_hash"] for a in articles]
     store.mark_rendered(hashes, date)
     
@@ -381,7 +387,8 @@ def cmd_status(store: Store) -> int:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="papernews")
     p.add_argument("--config", type=Path, default=Path("sources.toml"))
-    p.add_argument("--out",    type=Path, default=Path("archive"))
+    # Default output is to the root directory
+    p.add_argument("--out",    type=Path, default=Path("."))
     p.add_argument("--state",  type=Path, default=Path("state.db"))
 
     sub = p.add_subparsers(dest="cmd")

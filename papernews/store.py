@@ -229,6 +229,29 @@ class Store:
         )
         self.con.commit()
 
+    def sync_renders(self, out_dir: Path, constant_name: str = "papernews.pdf") -> int:
+        """
+        Checks the output directory for generated PDFs. If the PDF for a rendered
+        date is missing (and the constant papernews.pdf is also missing), 
+        the rendered_at marking is reset so it can be rebuilt.
+        """
+        cur = self.con.execute("SELECT DISTINCT rendered_at FROM article WHERE rendered_at IS NOT NULL")
+        dates = [row[0] for row in cur.fetchall()]
+        
+        unmarked = 0
+        const_exists = (out_dir / constant_name).exists()
+        
+        for d in dates:
+            if not (out_dir / f"{d}.pdf").exists() and not const_exists:
+                res = self.con.execute(
+                    "UPDATE article SET rendered_at = NULL WHERE rendered_at = ?",
+                    (d,)
+                )
+                unmarked += res.rowcount
+                
+        self.con.commit()
+        return unmarked
+
     # --- status --------------------------------------------------------------
 
     def counts(self) -> dict[str, int]:

@@ -23,6 +23,8 @@ _TYPST_REPLACE = {
     "{": r"\{",
     "}": r"\}",
     '"': r'\"',
+    "[": r"\[",
+    "]": r"\]",
 }
 
 def typst_escape(s) -> str:
@@ -129,7 +131,8 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
                             elif ctype == "image/gif": ext = ".gif"
                             elif ctype == "image/webp": ext = ".webp"
                             elif ctype == "image/svg+xml": ext = ".svg"
-                            else: ext = ".jpg"
+                            elif ctype in ("image/jpeg", "image/jpg"): ext = ".jpg"
+                            else: raise ValueError(f"Unrecognized image data and content-type: {ctype}")
 
                         filename = f"{url_hash}{ext}"
                         img_path = assets_dir / filename

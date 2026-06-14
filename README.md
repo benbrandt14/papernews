@@ -176,15 +176,15 @@ A 100–200 page PDF with:
 
 ### Cover page
 
-[📄 See the full sample PDF →](sample-2026-06-04.pdf)
+[📄 See the full sample PDF →](papernews.pdf)
 
-[![Cover page: title, quote of the day, world news, table of contents](assets/cover.png)](sample-2026-06-04.pdf)
+[![Cover page: title, quote of the day, world news, table of contents](assets/cover.png)](papernews.pdf)
 
 ### Article body
 
-[📄 See the full sample PDF →](sample-2026-06-04.pdf)
+[📄 See the full sample PDF →](papernews.pdf)
 
-[![A typical two-column article page, set in Latin Modern](assets/article.png)](sample-2026-06-04.pdf)
+[![A typical two-column article page, set in Latin Modern](assets/article.png)](papernews.pdf)
 
 ## Architecture
 
