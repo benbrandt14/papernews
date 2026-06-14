@@ -138,13 +138,7 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
                 bits.append(f'#link("{safe_url}")[{safe_alt}]/**/')
                 return f"\x00IMG{len(bits) - 1}\x00"
 
-        if alt:
-            safe_alt = typst_escape(alt)
-            caption_str = f', caption: [{safe_alt}]'
-        else:
-            caption_str = ''
-
-        bits.append(f'#figure(image("assets/{filename}", width: 80%){caption_str})/**/')
+        bits.append(f'#figure(image("assets/{filename}", width: 100%), placement: auto)/**/')
         return f"\x00IMG{len(bits) - 1}\x00"
 
     return _IMAGE_RE.sub(stash, text), bits

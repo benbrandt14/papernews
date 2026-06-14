@@ -147,6 +147,7 @@
 // --- Articles -------------------------------------------------------------
 #set par(first-line-indent: 1.1em, leading: 0.65em)
 #set par(spacing: 0.65em)
+#show figure.caption: it => text(size: 8pt, style: "italic", it.body)
 ((* for art in articles *))
   [#<art((( loop.index )))>]
   #sourcelabel("((( art.source | typst )))")((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")["((( art.date | typst )))"]((* endif *))
