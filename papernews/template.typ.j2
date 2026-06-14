@@ -74,7 +74,12 @@
 #set text(size: 9pt)
 #set par(first-line-indent: 0pt)
 #columns(2)[
+((* set wn_len = decorations.world_news | length *))
+((* set wn_break = (wn_len // 2) + (wn_len % 2) + 1 *))
 ((* for item in decorations.world_news *))
+  ((* if loop.index == wn_break *))
+  #colbreak()
+  ((* endif *))
   #box(width: 100%)[
     ((* if item.url *))#link("((( item.url | typst_url )))")[((( item.text | typst )))]((* else *))((( item.text | typst )))((* endif *))
     ((* if item.source *))#text(size: 7pt, style: "italic")[\ (((( item.source | typst ))))]((* endif *))
@@ -92,8 +97,13 @@
 #set text(size: 9pt)
 #set par(first-line-indent: 0pt, leading: 0.7em)
 #columns(2)[
+((* set art_len = articles | length *))
+((* set art_break = (art_len // 2) + (art_len % 2) + 1 *))
 ((* set ns = namespace(prev='') *))
 ((* for art in articles *))
+  ((* if loop.index == art_break *))
+  #colbreak()
+  ((* endif *))
   ((* if art.source != ns.prev *))
     #v(1em, weak: true)
     #sectionhead("((( art.source | typst )))")

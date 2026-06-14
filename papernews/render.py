@@ -9,6 +9,7 @@ import urllib.request
 from pathlib import Path
 
 import jinja2
+from PIL import Image
 
 _TYPST_REPLACE = {
     "\\": r"\\",
@@ -28,7 +29,6 @@ def typst_escape(s) -> str:
     if s is None:
         return ""
     res = "".join(_TYPST_REPLACE.get(c, c) for c in str(s))
-    # Safely escape # unless it's the specific #table macro we want to allow
     return re.sub(r'#(?!table\b)', r'\#', res)
 
 
@@ -42,6 +42,7 @@ _FENCE_RE = re.compile(r"```[a-zA-Z0-9_+\-]*\s*\n?(.*?)```", re.DOTALL)
 _INLINE_RE = re.compile(r"`([^`\n]+)`")
 
 _IMAGE_RE = re.compile(r"!\[([^\]]*)\]\((https?://[^\)]+)\)")
+_GALLERY_RE = re.compile(r"(?:!\[[^\]]*\]\(https?://[^\)]+\)\s*)+")
 _LINK_RE = re.compile(r"(?<!\!)\[([^\]]*)\]\(([^\)]+)\)")
 
 _MATH_RE = re.compile(
@@ -62,7 +63,6 @@ def _stash_typography(text: str) -> tuple[str, list[str]]:
     bits: list[str] = []
 
     def stash_bold(m: re.Match) -> str:
-        # /**/ protects the macro from accidentally absorbing trailing punctuation like ( or [
         bits.append(f"#strong[{m.group(1)}]/**/")
         return f"\x00TYP{len(bits) - 1}\x00"
 
@@ -97,51 +97,106 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
     bits: list[str] = []
 
     def stash(m: re.Match) -> str:
-        alt = m.group(1)
-        url = m.group(2)
-
-        url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
+        raw_match = m.group(0)
+        img_matches = _IMAGE_RE.findall(raw_match)
+        
         assets_dir = workdir / "assets"
         assets_dir.mkdir(parents=True, exist_ok=True)
+        
+        processed_images = []
 
-        existing = list(assets_dir.glob(f"{url_hash}.*"))
-        if existing:
-            filename = existing[0].name
-        else:
-            try:
-                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req, timeout=10) as response:
-                    data = response.read()
-                    
-                    if data.startswith(b'\xff\xd8'): ext = ".jpg"
-                    elif data.startswith(b'\x89PNG\r\n\x1a\n'): ext = ".png"
-                    elif data.startswith(b'GIF8'): ext = ".gif"
-                    elif data.startswith(b'RIFF') and data[8:12] == b'WEBP': ext = ".webp"
-                    elif b'<svg' in data[:1024].lower(): ext = ".svg"
-                    else:
-                        ctype = response.info().get_content_type()
-                        if ctype == "image/png": ext = ".png"
-                        elif ctype == "image/gif": ext = ".gif"
-                        elif ctype == "image/webp": ext = ".webp"
-                        elif ctype == "image/svg+xml": ext = ".svg"
-                        else: ext = ".jpg"
-
-                    filename = f"{url_hash}{ext}"
-                    img_path = assets_dir / filename
-                    with open(img_path, "wb") as f:
-                        f.write(data)
+        for alt, url in img_matches:
+            url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
+            
+            existing = list(assets_dir.glob(f"{url_hash}.*"))
+            filename = None
+            img_path = None
+            
+            if existing:
+                filename = existing[0].name
+                img_path = existing[0]
+            else:
+                try:
+                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req, timeout=10) as response:
+                        data = response.read()
                         
-            except Exception as e:
-                sys.stderr.write(f"  [warn] failed to fetch image {url}: {e}\n")
-                safe_alt = typst_escape(alt)
-                safe_url = typst_url(url)
-                bits.append(f'#link("{safe_url}")[{safe_alt}]/**/')
-                return f"\x00IMG{len(bits) - 1}\x00"
+                        if data.startswith(b'\xff\xd8'): ext = ".jpg"
+                        elif data.startswith(b'\x89PNG\r\n\x1a\n'): ext = ".png"
+                        elif data.startswith(b'GIF8'): ext = ".gif"
+                        elif data.startswith(b'RIFF') and data[8:12] == b'WEBP': ext = ".webp"
+                        elif b'<svg' in data[:1024].lower(): ext = ".svg"
+                        else:
+                            ctype = response.info().get_content_type()
+                            if ctype == "image/png": ext = ".png"
+                            elif ctype == "image/gif": ext = ".gif"
+                            elif ctype == "image/webp": ext = ".webp"
+                            elif ctype == "image/svg+xml": ext = ".svg"
+                            else: ext = ".jpg"
 
-        bits.append(f'#figure(image("assets/{filename}", width: 100%), placement: auto)/**/')
-        return f"\x00IMG{len(bits) - 1}\x00"
+                        filename = f"{url_hash}{ext}"
+                        img_path = assets_dir / filename
+                        with open(img_path, "wb") as f:
+                            f.write(data)
+                            
+                except Exception as e:
+                    sys.stderr.write(f"  [warn] failed to fetch image {url}: {e}\n")
+                    safe_alt = typst_escape(alt)
+                    safe_url = typst_url(url)
+                    processed_images.append(f'#link("{safe_url}")[{safe_alt}]/**/')
+                    continue
 
-    return _IMAGE_RE.sub(stash, text), bits
+            aspect = 1.5 
+            width_px = 800
+            if img_path and img_path.exists() and img_path.suffix != ".svg":
+                try:
+                    with Image.open(img_path) as img_file:
+                        width_px, height_px = img_file.size
+                        aspect = width_px / height_px
+                except Exception:
+                    pass
+
+            processed_images.append((filename, aspect, width_px))
+
+        valid_images = [img for img in processed_images if isinstance(img, tuple)]
+        fallbacks = [img for img in processed_images if isinstance(img, str)]
+
+        if not valid_images:
+            return "".join(fallbacks)
+
+        # 1. Standard Layouts (<= 3 Images)
+        if len(valid_images) <= 3:
+            figs = []
+            for filename, aspect, width_px in valid_images:
+                if aspect > 1.8 and width_px > 600:
+                    fig_props = 'placement: auto, scope: "parent"'
+                    img_props = 'width: 100%'
+                elif aspect < 0.9:
+                    fig_props = 'placement: auto'
+                    img_props = 'width: 55%'
+                else:
+                    fig_props = 'placement: auto'
+                    img_props = 'width: 100%'
+                    
+                figs.append(f'#figure(image("assets/{filename}", {img_props}), {fig_props})/**/')
+                
+            # If multiple images, they will output as separate stacked figures
+            bits.append("\n".join(figs))
+            
+        # 2. Gallery Grid Layout (> 3 Images)
+        else:
+            grid_items = []
+            for filename, _, _ in valid_images:
+                grid_items.append(f'image("assets/{filename}", width: 100%)')
+            
+            cols = 2
+            grid_str = f'grid(columns: {cols}, gutter: 6pt, {", ".join(grid_items)})'
+            bits.append(f'#figure({grid_str}, placement: auto)/**/')
+
+        res = f"\x00IMG{len(bits) - 1}\x00" + "".join(fallbacks)
+        return res
+
+    return _GALLERY_RE.sub(stash, text), bits
 
 
 def _render_code_block(code: str) -> str:
@@ -150,6 +205,26 @@ def _render_code_block(code: str) -> str:
         fence_len += 1
     fence = "`" * fence_len
     return f"\n\n{fence}\n{code}\n{fence}\n\n"
+
+
+def _process_inline(text: str) -> str:
+    parts = _INLINE_RE.split(text)
+    out = []
+    for i, part in enumerate(parts):
+        if i % 2 == 0:
+            out.append(typst_escape(part))
+        else:
+            fence_len = 1
+            while "`" * fence_len in part:
+                fence_len += 1
+            fence = "`" * fence_len
+            
+            safe_part = part
+            if safe_part.startswith("`"): safe_part = " " + safe_part
+            if safe_part.endswith("`") or safe_part.endswith("\\"): safe_part = safe_part + " "
+            
+            out.append(f"{fence}{safe_part}{fence}")
+    return "".join(out)
 
 
 def _stash_math(text: str) -> tuple[str, list[str]]:
@@ -199,19 +274,38 @@ _LEADING_DATE_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
-def _strip_leading_date_line(text: str) -> str:
-    lines = text.lstrip("\n").split("\n")
-    while lines and _LEADING_DATE_RE.fullmatch(lines[0].strip()):
-        lines = lines[1:]
-        while lines and not lines[0].strip():
-            lines = lines[1:]
+def _strip_leading_metadata(text: str) -> str:
+    """Robustly strips leading LLM hallucinations like dates or redundant article titles."""
+    lines = text.split("\n")
+    
+    while lines:
+        first = lines[0].strip()
+        
+        # Consume blank lines
+        if not first:
+            lines.pop(0)
+            continue
+            
+        # Consume standalone dates
+        if _LEADING_DATE_RE.fullmatch(first):
+            lines.pop(0)
+            continue
+            
+        # Consume the redundant first heading (e.g., `# Title` or `= Title`)
+        if re.match(r'^(=+|#+)\s+', first):
+            lines.pop(0)
+            continue
+            
+        break # We hit the actual article body content
+        
     return "\n".join(lines)
 
 
 def typst_body(text: str, workdir: Path) -> str:
     if not text:
         return ""
-    text = _strip_leading_date_line(text)
+        
+    text = _strip_leading_metadata(text)
 
     blocks: list[str] = []
 
@@ -261,7 +355,6 @@ def typst_body(text: str, workdir: Path) -> str:
         def expand_lnk(mm: re.Match) -> str: return lnk_bits[int(mm.group(1))]
         def expand_typ(mm: re.Match) -> str: return typ_bits[int(mm.group(1))]
 
-        # Iterative expansion to seamlessly handle nested formatting, like [**Bold Link**](url)
         while True:
             old = rendered
             rendered = re.sub(r"\x00CB(\d+)\x00", expand_cb, rendered)
@@ -322,11 +415,9 @@ def build_pdf(
     except typst.TypstError as e:
         sys.stderr.write(f"\n[error] Typst compilation failed!\n")
         
-        # Enhanced Debug Context: Read the generated .typ file and print a snippet
         try:
             line_match = re.search(r'line (\d+)', str(e), re.IGNORECASE)
             if not line_match:
-                # Some versions of Typst Python bindings output standard string formats
                 line_match = re.search(r':(\d+):\d+', str(e))
                 
             if line_match:
