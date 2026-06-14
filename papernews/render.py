@@ -59,22 +59,19 @@ _STRONG_US_RE = re.compile(r"__(?!\s)(.+?)(?<!\s)__")
 _EMPH_US_RE = re.compile(r"(?<![a-zA-Z0-9_])_(?!\s)(.+?)(?<!\s)_(?![a-zA-Z0-9_])")
 
 
-def _stash_typography(text: str) -> tuple[str, list[str]]:
-    bits: list[str] = []
+def _stash_typography(text: str) -> str:
+    
+    def stash_b(m: re.Match) -> str: 
+        return f"\x00BSTART\x00{m.group(1)}\x00BEND\x00"
+    
+    def stash_i(m: re.Match) -> str: 
+        return f"\x00ISTART\x00{m.group(1)}\x00IEND\x00"
 
-    def stash_bold(m: re.Match) -> str:
-        bits.append(f"#strong[{m.group(1)}]/**/")
-        return f"\x00TYP{len(bits) - 1}\x00"
-
-    def stash_italic(m: re.Match) -> str:
-        bits.append(f"#emph[{m.group(1)}]/**/")
-        return f"\x00TYP{len(bits) - 1}\x00"
-
-    stashed = _STRONG_RE.sub(stash_bold, text)
-    stashed = _EMPH_RE.sub(stash_bold, stashed)
-    stashed = _STRONG_US_RE.sub(stash_bold, stashed)
-    stashed = _EMPH_US_RE.sub(stash_italic, stashed)
-    return stashed, bits
+    stashed = _STRONG_RE.sub(stash_b, text)
+    stashed = _EMPH_RE.sub(stash_i, stashed)
+    stashed = _STRONG_US_RE.sub(stash_b, stashed)
+    stashed = _EMPH_US_RE.sub(stash_i, stashed)
+    return stashed
 
 
 def _stash_links(text: str) -> tuple[str, list[str]]:
@@ -141,9 +138,11 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
                             
                 except Exception as e:
                     sys.stderr.write(f"  [warn] failed to fetch image {url}: {e}\n")
+                    # If download fails, stash it immediately as a safe Typst link
                     safe_alt = typst_escape(alt)
                     safe_url = typst_url(url)
-                    processed_images.append(f'#link("{safe_url}")[{safe_alt}]/**/')
+                    bits.append(f'#link("{safe_url}")[{safe_alt}]/**/')
+                    processed_images.append(f"\x00IMG{len(bits) - 1}\x00")
                     continue
 
             aspect = 1.5 
@@ -158,43 +157,51 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
 
             processed_images.append((filename, aspect, width_px))
 
-        valid_images = [img for img in processed_images if isinstance(img, tuple)]
-        fallbacks = [img for img in processed_images if isinstance(img, str)]
-
-        if not valid_images:
-            return "".join(fallbacks)
-
-        # 1. Standard Layouts (<= 3 Images)
-        if len(valid_images) <= 3:
-            figs = []
-            for filename, aspect, width_px in valid_images:
-                if aspect > 1.8 and width_px > 600:
-                    fig_props = 'placement: auto, scope: "parent"'
-                    img_props = 'width: 100%'
-                elif aspect < 0.9:
-                    fig_props = 'placement: auto'
-                    img_props = 'width: 55%'
-                else:
-                    fig_props = 'placement: auto'
-                    img_props = 'width: 100%'
+        out_str = ""
+        current_valid_group = []
+        
+        def flush_valid_group():
+            nonlocal out_str
+            if not current_valid_group:
+                return
+            if len(current_valid_group) <= 3:
+                figs = []
+                for filename, aspect, width_px in current_valid_group:
+                    if aspect > 1.8 and width_px > 600:
+                        fig_props = 'placement: auto, scope: "parent"'
+                        img_props = 'width: 100%'
+                    elif aspect < 0.9:
+                        fig_props = 'placement: auto'
+                        img_props = 'width: 55%'
+                    else:
+                        fig_props = 'placement: auto'
+                        img_props = 'width: 100%'
+                        
+                    figs.append(f'#figure(image("assets/{filename}", {img_props}), {fig_props})/**/')
                     
-                figs.append(f'#figure(image("assets/{filename}", {img_props}), {fig_props})/**/')
+                bits.append("\n".join(figs))
+                out_str += f"\x00IMG{len(bits) - 1}\x00"
+            else:
+                grid_items = []
+                for filename, _, _ in current_valid_group:
+                    grid_items.append(f'image("assets/{filename}", width: 100%)')
                 
-            # If multiple images, they will output as separate stacked figures
-            bits.append("\n".join(figs))
-            
-        # 2. Gallery Grid Layout (> 3 Images)
-        else:
-            grid_items = []
-            for filename, _, _ in valid_images:
-                grid_items.append(f'image("assets/{filename}", width: 100%)')
-            
-            cols = 2
-            grid_str = f'grid(columns: {cols}, gutter: 6pt, {", ".join(grid_items)})'
-            bits.append(f'#figure({grid_str}, placement: auto)/**/')
+                cols = 2
+                grid_str = f'grid(columns: {cols}, gutter: 6pt, {", ".join(grid_items)})'
+                bits.append(f'#figure({grid_str}, placement: auto)/**/')
+                out_str += f"\x00IMG{len(bits) - 1}\x00"
+            current_valid_group.clear()
 
-        res = f"\x00IMG{len(bits) - 1}\x00" + "".join(fallbacks)
-        return res
+        for item in processed_images:
+            if isinstance(item, tuple):
+                current_valid_group.append(item)
+            else:
+                # Flush existing valid images, then output the fallback link marker
+                flush_valid_group()
+                out_str += item
+
+        flush_valid_group()
+        return out_str
 
     return _GALLERY_RE.sub(stash, text), bits
 
@@ -280,23 +287,16 @@ def _strip_leading_metadata(text: str) -> str:
     
     while lines:
         first = lines[0].strip()
-        
-        # Consume blank lines
         if not first:
             lines.pop(0)
             continue
-            
-        # Consume standalone dates
         if _LEADING_DATE_RE.fullmatch(first):
             lines.pop(0)
             continue
-            
-        # Consume the redundant first heading (e.g., `# Title` or `= Title`)
         if re.match(r'^(=+|#+)\s+', first):
             lines.pop(0)
             continue
-            
-        break # We hit the actual article body content
+        break
         
     return "\n".join(lines)
 
@@ -332,7 +332,7 @@ def typst_body(text: str, workdir: Path) -> str:
 
     stashed, img_bits = _stash_images(stashed, workdir)
     stashed, math_bits = _stash_math(stashed)
-    stashed, typ_bits = _stash_typography(stashed)
+    stashed = _stash_typography(stashed)
     stashed, lnk_bits = _stash_links(stashed)
 
     paras = (
@@ -346,6 +346,7 @@ def typst_body(text: str, workdir: Path) -> str:
         if not p:
             continue
         
+        # 1. Safely escape everything outside of the stashed markers
         rendered = typst_escape(p)
 
         def expand_cb(mm: re.Match) -> str: return _render_code_block(blocks[int(mm.group(1))])
@@ -353,8 +354,8 @@ def typst_body(text: str, workdir: Path) -> str:
         def expand_img(mm: re.Match) -> str: return img_bits[int(mm.group(1))]
         def expand_math(mm: re.Match) -> str: return math_bits[int(mm.group(1))]
         def expand_lnk(mm: re.Match) -> str: return lnk_bits[int(mm.group(1))]
-        def expand_typ(mm: re.Match) -> str: return typ_bits[int(mm.group(1))]
 
+        # 2. Expand all isolated blocks back into the text stream
         while True:
             old = rendered
             rendered = re.sub(r"\x00CB(\d+)\x00", expand_cb, rendered)
@@ -362,7 +363,12 @@ def typst_body(text: str, workdir: Path) -> str:
             rendered = re.sub(r"\x00IMG(\d+)\x00", expand_img, rendered)
             rendered = re.sub(r"\x00MB(\d+)\x00", expand_math, rendered)
             rendered = re.sub(r"\x00LNK(\d+)\x00", expand_lnk, rendered)
-            rendered = re.sub(r"\x00TYP(\d+)\x00", expand_typ, rendered)
+            
+            rendered = rendered.replace("\x00BSTART\x00", "#strong[")
+            rendered = rendered.replace("\x00BEND\x00", "]/**/")
+            rendered = rendered.replace("\x00ISTART\x00", "#emph[")
+            rendered = rendered.replace("\x00IEND\x00", "]/**/")
+            
             if old == rendered:
                 break
 

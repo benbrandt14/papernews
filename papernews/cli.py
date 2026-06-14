@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 import tomllib
+import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date as date_cls, datetime
 from pathlib import Path
@@ -40,7 +41,25 @@ def _load_config(path: Path) -> tuple[list[dict], dict, dict]:
 
 # --- stages -----------------------------------------------------------------
 
-def cmd_gather(store: Store, sources: list[dict]) -> int:
+def cmd_clean(state_path: Path, out_dir: Path, reset_db: bool) -> int:
+    """Clears out local temporary build artifacts and optionally resets database state."""
+    build_dir = out_dir / ".build"
+    if build_dir.exists():
+        shutil.rmtree(build_dir)
+        _log(f"[clean] Removed temporary layout directory: {build_dir}")
+    else:
+        _log("[clean] Layout cache directory already clean")
+
+    if reset_db and state_path.exists():
+        state_path.unlink()
+        _log(f"[clean] Erased localized tracking database: {state_path}")
+    elif reset_db:
+        _log("[clean] Database file does not exist; skipping erase")
+        
+    return 0
+
+
+def cmd_gather(store: Store, sources: list[dict], force: bool = False) -> int:
     new_count = 0
     failed_count = 0
     for src in sources:
@@ -73,12 +92,20 @@ def cmd_gather(store: Store, sources: list[dict]) -> int:
             continue
 
         for it in items:
+            import hashlib
+            url_hash = hashlib.sha256(it.url.encode("utf-8")).hexdigest()[:16]
+            
             if store.exists(it.url, it.title):
-                store.insert_raw(
-                    source=it.source, category=category, url=it.url, title=it.title,
-                    text=None, surfaced=it.surfaced,
-                )
-                continue
+                if force:
+                    # Decoupled eviction to force clean re-extraction during prompt/parser iteration
+                    store.con.execute("DELETE FROM article WHERE url_hash = ?", (url_hash,))
+                    store.con.commit()
+                else:
+                    store.insert_raw(
+                        source=it.source, category=category, url=it.url, title=it.title,
+                        text=None, surfaced=it.surfaced,
+                    )
+                    continue
             try:
                 art = extract(it.url, it.title, it.source)
             except Exception as e:
@@ -322,13 +349,17 @@ def cmd_render(store: Store, date: str, out_dir: Path, sources: list[dict], pref
     return 0
 
 
-def cmd_ingest(store: Store, sources: list[dict], prefs: dict, cat_limits: dict, workers: int) -> int:
-    rc = cmd_gather(store, sources)
+def cmd_ingest(store: Store, sources: list[dict], prefs: dict, cat_limits: dict, workers: int, force_gather: bool = False, skip_rewrite: bool = False) -> int:
+    rc = cmd_gather(store, sources, force=force_gather)
     if rc: return rc
     rc = cmd_select(store, sources, prefs, cat_limits)
     if rc: return rc
     rc = cmd_summarize(store, workers)
     if rc: return rc
+    
+    if skip_rewrite:
+        _log("[ingest] Skipping optional long-form paragraph body optimization step")
+        return 0
     return cmd_rewrite(store, workers)
 
 
@@ -354,7 +385,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--state",  type=Path, default=Path("state.db"))
 
     sub = p.add_subparsers(dest="cmd")
-    sub.add_parser("gather", help="fetch + extract new articles into the store")
+    
+    # Dev utilities
+    sp_cl = sub.add_parser("clean", help="clean localized compile caches and storage indices")
+    sp_cl.add_argument("--db", action="store_true", help="wipe database clean to force full structural refetching")
+
+    sp_gat = sub.add_parser("gather", help="fetch + extract new articles into the store")
+    sp_gat.add_argument("--force", action="store_true", help="evict and re-extract existing matching records")
+    
     sub.add_parser("select", help="downselect pending articles via LLM/heuristics")
     
     sp_sum = sub.add_parser("summarize", help="summarize articles missing a summary")
@@ -365,6 +403,8 @@ def main(argv: list[str] | None = None) -> int:
     
     sp_ing = sub.add_parser("ingest", help="gather + select + summarize + rewrite (no PDF)")
     sp_ing.add_argument("--workers", type=int, default=6)
+    sp_ing.add_argument("--force", action="store_true", help="force raw collection overrides")
+    sp_ing.add_argument("--skip-rewrite", action="store_true", help="bypass expensive context text structural rewrites")
     
     sp_ren = sub.add_parser("render", help="render the current edition PDF")
     sp_ren.add_argument("--date", default=date_cls.today().isoformat())
@@ -374,9 +414,14 @@ def main(argv: list[str] | None = None) -> int:
     sp_b = sub.add_parser("build", help="ingest + render (default)")
     sp_b.add_argument("--workers", type=int, default=6)
     sp_b.add_argument("--date",    default=date_cls.today().isoformat())
+    sp_b.add_argument("--force", action="store_true", help="force raw collection overrides")
+    sp_b.add_argument("--skip-rewrite", action="store_true", help="bypass expensive context text structural rewrites")
 
     args = p.parse_args(argv)
     cmd = args.cmd or "build"
+
+    if cmd == "clean":
+        return cmd_clean(args.state, args.out, args.db)
 
     if not args.config.exists():
         _log(f"[fatal] config not found: {args.config}")
@@ -389,12 +434,11 @@ def main(argv: list[str] | None = None) -> int:
 
     store = Store(args.state)
     
-    # Retroactively assign categories to any existing DB articles based on current sources.toml
     source_category_map = {s["name"]: s.get("category", "Uncategorized") for s in sources}
     store.sync_categories(source_category_map)
 
     if cmd == "gather":
-        return cmd_gather(store, sources)
+        return cmd_gather(store, sources, force=args.force)
     if cmd == "select":
         return cmd_select(store, sources, prefs, cat_limits)
     if cmd == "summarize":
@@ -402,13 +446,13 @@ def main(argv: list[str] | None = None) -> int:
     if cmd == "rewrite":
         return cmd_rewrite(store, args.workers)
     if cmd == "ingest":
-        return cmd_ingest(store, sources, prefs, cat_limits, args.workers)
+        return cmd_ingest(store, sources, prefs, cat_limits, args.workers, force_gather=args.force, skip_rewrite=args.skip_rewrite)
     if cmd == "render":
         return cmd_render(store, args.date, args.out, sources, prefs, cat_limits)
     if cmd == "status":
         return cmd_status(store)
     if cmd == "build":
-        rc = cmd_ingest(store, sources, prefs, cat_limits, args.workers)
+        rc = cmd_ingest(store, sources, prefs, cat_limits, args.workers, force_gather=args.force, skip_rewrite=args.skip_rewrite)
         if rc:
             return rc
         return cmd_render(store, args.date, args.out, sources, prefs, cat_limits)
