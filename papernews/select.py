@@ -8,7 +8,7 @@ import sqlite3
 from . import llm
 
 
-def select_articles(source_name: str, rows: list[sqlite3.Row], limit: int, prefs: dict) -> tuple[list[str], list[str]]:
+def select_articles(category_name: str, rows: list[sqlite3.Row], limit: int, prefs: dict) -> tuple[list[str], list[str]]:
     selected_hashes = []
     rejected_hashes = []
 
@@ -29,7 +29,7 @@ def select_articles(source_name: str, rows: list[sqlite3.Row], limit: int, prefs
     # --- Stage 1: Hard Filter ---
     # Only reject articles that are functionally useless (e.g., extraction failed/too short)
     for r in rows:
-        if len(r["text"]) < 500:
+        if len(r["text"]) < 200: # should still allow abstracts through
             rejected_hashes.append(r["url_hash"])
         else:
             surviving.append(r)

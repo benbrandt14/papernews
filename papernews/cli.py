@@ -24,10 +24,18 @@ def _log(msg: str) -> None:
     sys.stderr.flush()
 
 
-def _load_config(path: Path) -> tuple[list[dict], dict]:
+def _load_config(path: Path) -> tuple[list[dict], dict, dict]:
     with open(path, "rb") as f:
         cfg = tomllib.load(f)
-    return cfg.get("source", []), cfg.get("preferences", {})
+        
+    sources = cfg.get("source", [])
+    prefs = cfg.get("preferences", {})
+    cat_limits = cfg.get("category_limits", {})
+    
+    if isinstance(prefs, list):
+        prefs = prefs[0] if prefs else {}
+        
+    return sources, prefs, cat_limits
 
 
 # --- stages -----------------------------------------------------------------
@@ -38,8 +46,9 @@ def cmd_gather(store: Store, sources: list[dict]) -> int:
     for src in sources:
         name = src["name"]
         kind = src.get("kind", "rss")
-        fetch_limit = src.get("fetch_limit", 40)  # Updated default fetch limit
-        _log(f"[gather] {name}")
+        category = src.get("category", "Uncategorized")
+        fetch_limit = src.get("fetch_limit", 40)
+        _log(f"[gather] {name} ({category})")
         
         try:
             if kind == "hn":
@@ -66,7 +75,7 @@ def cmd_gather(store: Store, sources: list[dict]) -> int:
         for it in items:
             if store.exists(it.url, it.title):
                 store.insert_raw(
-                    it.source, it.url, it.title,
+                    source=it.source, category=category, url=it.url, title=it.title,
                     text=None, surfaced=it.surfaced,
                 )
                 continue
@@ -74,51 +83,67 @@ def cmd_gather(store: Store, sources: list[dict]) -> int:
                 art = extract(it.url, it.title, it.source)
             except Exception as e:
                 _log(f"  [error] extract: {it.title[:60]}: {e}")
-                store.insert_raw(
-                    it.source, it.url, it.title,
-                    text=None, surfaced=it.surfaced,
-                )
-                failed_count += 1
-                continue
+                art = None
             
-            if art is None or not art.text or not art.text.strip():
+            text = art.text if art else None
+            
+            # --- NEW: RSS Fallback Engine ---
+            # If the site blocks scrapers or the page is unreadable, fall back to the RSS payload
+            if not text or len(text.strip()) < 100:
+                if getattr(it, "rss_content", None):
+                    import re
+                    # Quickly strip HTML tags to get raw prose
+                    clean_rss = re.sub(r'<[^>]+>', ' ', it.rss_content)
+                    clean_rss = " ".join(clean_rss.split())
+                    if len(clean_rss) >= 50:
+                        text = clean_rss
+            # --------------------------------
+            
+            if not text or len(text.strip()) < 100:
                 store.insert_raw(
-                    it.source, it.url, it.title,
+                    source=it.source, category=category, url=it.url, title=it.title,
                     text=None, surfaced=it.surfaced,
                 )
                 failed_count += 1
                 _log(f"  - {it.title[:70]}  (no readable content)")
             else:
-                pub = art.published or it.surfaced
+                pub = art.published if art else None
+                pub = pub or it.surfaced
                 store.insert_raw(
-                    it.source, it.url, it.title,
-                    text=art.text,
-                    surfaced=it.surfaced,
-                    published=pub,
+                    source=it.source, category=category, url=it.url, title=it.title,
+                    text=text, surfaced=it.surfaced, published=pub,
                 )
                 new_count += 1
-                _log(f"  + {it.title[:70]}  ({len(art.text)} chars)")
+                _log(f"  + {it.title[:70]}  ({len(text)} chars)")
                 
     _log(f"[gather] +{new_count} new, {failed_count} unreadable")
     return 0
 
 
-def cmd_select(store: Store, sources: list[dict], prefs: dict) -> int:
+def cmd_select(store: Store, sources: list[dict], prefs: dict, cat_limits: dict) -> int:
     from .select import select_articles
     
     total_sel = 0
     total_rej = 0
     
+    # Extract unique categories dynamically based on source ordering
+    categories = []
     for src in sources:
-        name = src["name"]
-        limit = int(src.get("limit", 10))  # PDF selection limit
+        cat = src.get("category", "Uncategorized")
+        if cat not in categories:
+            categories.append(cat)
+            
+    default_limit = prefs.get("default_category_limit", 3)
+    
+    for cat in categories:
+        limit = cat_limits.get(cat, default_limit)
         
-        pending = store.pending_selection(name)
+        pending = store.pending_selection_by_category(cat)
         if not pending:
             continue
             
-        _log(f"[select] {name}: evaluating {len(pending)} pending")
-        selected, rejected = select_articles(name, pending, limit, prefs)
+        _log(f"[select] Category '{cat}': evaluating {len(pending)} pending (limit {limit})")
+        selected, rejected = select_articles(cat, pending, limit, prefs)
         
         if selected:
             store.set_selection_status(selected, 1)
@@ -145,7 +170,6 @@ def _chunks(seq: list, n: int) -> list[list]:
 
 def cmd_summarize(store: Store, workers: int) -> int:
     from .summarize import summarize_batch
-
     pending = store.pending_summary()
     if not pending:
         _log("[summarize] nothing pending")
@@ -188,7 +212,6 @@ def cmd_summarize(store: Store, workers: int) -> int:
 
 def cmd_rewrite(store: Store, workers: int) -> int:
     from .rewrite import rewrite_batch
-
     pending = store.pending_rewrite()
     if not pending:
         _log("[rewrite] nothing pending")
@@ -264,16 +287,25 @@ def _gather_decorations() -> dict:
     return decorations
 
 
-def _collect_current_edition(store: Store, sources: list[dict]) -> list[dict]:
+def _collect_current_edition(store: Store, sources: list[dict], prefs: dict, cat_limits: dict) -> list[dict]:
     out: list[dict] = []
+    
+    categories = []
     for src in sources:
-        name = src["name"]
-        limit = int(src.get("limit", 10))
-        rows = store.latest_per_source(name, limit)
+        cat = src.get("category", "Uncategorized")
+        if cat not in categories:
+            categories.append(cat)
+            
+    default_limit = prefs.get("default_category_limit", 3)
+    
+    for cat in categories:
+        limit = cat_limits.get(cat, default_limit)
+        rows = store.latest_per_category(cat, limit)
         for r in rows:
             out.append({
                 "url_hash": r["url_hash"],
                 "source": r["source"],
+                "category": r["category"],
                 "url": r["url"],
                 "title": r["title"],
                 "text": r["body"] if r["body"] else r["text"],
@@ -283,8 +315,8 @@ def _collect_current_edition(store: Store, sources: list[dict]) -> list[dict]:
     return out
 
 
-def cmd_render(store: Store, date: str, out_dir: Path, sources: list[dict]) -> int:
-    articles = _collect_current_edition(store, sources)
+def cmd_render(store: Store, date: str, out_dir: Path, sources: list[dict], prefs: dict, cat_limits: dict) -> int:
+    articles = _collect_current_edition(store, sources, prefs, cat_limits)
     if not articles:
         _log("[render] no ready articles in store yet")
         return 0
@@ -302,11 +334,10 @@ def cmd_render(store: Store, date: str, out_dir: Path, sources: list[dict]) -> i
     return 0
 
 
-def cmd_ingest(store: Store, sources: list[dict], prefs: dict, workers: int) -> int:
-    """Run gather -> select -> summarize -> rewrite."""
+def cmd_ingest(store: Store, sources: list[dict], prefs: dict, cat_limits: dict, workers: int) -> int:
     rc = cmd_gather(store, sources)
     if rc: return rc
-    rc = cmd_select(store, sources, prefs)
+    rc = cmd_select(store, sources, prefs, cat_limits)
     if rc: return rc
     rc = cmd_summarize(store, workers)
     if rc: return rc
@@ -335,25 +366,23 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--state",  type=Path, default=Path("state.db"))
 
     sub = p.add_subparsers(dest="cmd")
-
     sub.add_parser("gather", help="fetch + extract new articles into the store")
-    
     sub.add_parser("select", help="downselect pending articles via LLM/heuristics")
-
+    
     sp_sum = sub.add_parser("summarize", help="summarize articles missing a summary")
     sp_sum.add_argument("--workers", type=int, default=6)
-
+    
     sp_rw = sub.add_parser("rewrite", help="reformat article bodies into clean paragraphs")
     sp_rw.add_argument("--workers", type=int, default=6)
-
+    
     sp_ing = sub.add_parser("ingest", help="gather + select + summarize + rewrite (no PDF)")
     sp_ing.add_argument("--workers", type=int, default=6)
-
+    
     sp_ren = sub.add_parser("render", help="render the current edition PDF")
     sp_ren.add_argument("--date", default=date_cls.today().isoformat())
-
+    
     sub.add_parser("status", help="print store counts")
-
+    
     sp_b = sub.add_parser("build", help="ingest + render (default)")
     sp_b.add_argument("--workers", type=int, default=6)
     sp_b.add_argument("--date",    default=date_cls.today().isoformat())
@@ -365,32 +394,36 @@ def main(argv: list[str] | None = None) -> int:
         _log(f"[fatal] config not found: {args.config}")
         return 2
 
-    sources, prefs = _load_config(args.config)
+    sources, prefs, cat_limits = _load_config(args.config)
     if cmd in ("gather", "select", "ingest", "build") and not sources:
         _log("[fatal] no sources configured")
         return 2
 
     store = Store(args.state)
+    
+    # Retroactively assign categories to any existing DB articles based on current sources.toml
+    source_category_map = {s["name"]: s.get("category", "Uncategorized") for s in sources}
+    store.sync_categories(source_category_map)
 
     if cmd == "gather":
         return cmd_gather(store, sources)
     if cmd == "select":
-        return cmd_select(store, sources, prefs)
+        return cmd_select(store, sources, prefs, cat_limits)
     if cmd == "summarize":
         return cmd_summarize(store, args.workers)
     if cmd == "rewrite":
         return cmd_rewrite(store, args.workers)
     if cmd == "ingest":
-        return cmd_ingest(store, sources, prefs, args.workers)
+        return cmd_ingest(store, sources, prefs, cat_limits, args.workers)
     if cmd == "render":
-        return cmd_render(store, args.date, args.out, sources)
+        return cmd_render(store, args.date, args.out, sources, prefs, cat_limits)
     if cmd == "status":
         return cmd_status(store)
     if cmd == "build":
-        rc = cmd_ingest(store, sources, prefs, args.workers)
+        rc = cmd_ingest(store, sources, prefs, cat_limits, args.workers)
         if rc:
             return rc
-        return cmd_render(store, args.date, args.out, sources)
+        return cmd_render(store, args.date, args.out, sources, prefs, cat_limits)
 
     _log(f"[fatal] unknown command: {cmd}")
     return 2

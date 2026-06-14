@@ -11,7 +11,6 @@ import requests
 
 
 def _clean_title(s: str | None) -> str:
-    """Decode HTML entities and collapse whitespace in feed-provided titles."""
     if not s:
         return ""
     return " ".join(html.unescape(s).split())
@@ -22,14 +21,10 @@ class RawItem:
     source: str
     url: str
     title: str
-    # Date the source surfaced this item (HN submission for HN, feed pub for
-    # RSS). Used for window filtering. The article's *own* publication date
-    # comes from extract.py via trafilatura metadata.
-    surfaced: str | None = None  # ISO date "YYYY-MM-DD" or None
+    surfaced: str | None = None  
+    rss_content: str | None = None # ADDED: Capture the raw RSS text
 
 
-# Algolia HN search. Returns stories matching the numericFilters, ranked by
-# popularity. We then re-sort by points and truncate to `limit`.
 _HN_SEARCH = "https://hn.algolia.com/api/v1/search"
 
 
@@ -67,10 +62,6 @@ def fetch_wikipedia_events(
     source_name: str = "World news",
     days_back: int = 1,
 ) -> Iterator[RawItem]:
-    """Yield one item per day of Wikipedia's Portal:Current_events.
-
-    days_back=1 → just today. Increase to backfill recent days.
-    """
     from datetime import date as _date, timedelta as _td
     from .wiki import current_events_url, current_events_title
 
@@ -97,4 +88,12 @@ def fetch_rss(source_name: str, feed_url: str, limit: int = 20) -> Iterator[RawI
             or getattr(entry, "updated_parsed", None)
         )
         surfaced = time.strftime("%Y-%m-%d", parsed) if parsed else None
-        yield RawItem(source=source_name, url=url, title=title, surfaced=surfaced)
+        
+        # EXTRACT FALLBACK: Many scientific feeds put the abstract directly in the RSS XML
+        rss_content = None
+        if hasattr(entry, "content"):
+            rss_content = entry.content[0].value
+        elif hasattr(entry, "summary"):
+            rss_content = entry.summary
+            
+        yield RawItem(source=source_name, url=url, title=title, surfaced=surfaced, rss_content=rss_content)

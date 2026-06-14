@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS article (
     title            TEXT NOT NULL,
     title_norm       TEXT NOT NULL,
     source           TEXT NOT NULL,
+    category         TEXT NOT NULL DEFAULT 'Uncategorized',
     text             TEXT,              -- NULL if extraction failed
     body             TEXT,              -- NULL until rewritten
     summary          TEXT,              -- NULL until summarized
@@ -56,6 +57,8 @@ def _migrate(con) -> None:
         con.execute("ALTER TABLE article ADD COLUMN published TEXT")
     if "selection_status" not in cols:
         con.execute("ALTER TABLE article ADD COLUMN selection_status INTEGER DEFAULT 0")
+    if "category" not in cols:
+        con.execute("ALTER TABLE article ADD COLUMN category TEXT DEFAULT 'Uncategorized'")
     con.commit()
 
 
@@ -65,6 +68,12 @@ class Store:
         self.con.row_factory = sqlite3.Row
         self.con.executescript(_SCHEMA)
         _migrate(self.con)
+
+    def sync_categories(self, source_category_map: dict[str, str]) -> None:
+        """Retroactively update categories in the DB to match current sources.toml"""
+        for source, category in source_category_map.items():
+            self.con.execute("UPDATE article SET category = ? WHERE source = ?", (category, source))
+        self.con.commit()
 
     # --- gather --------------------------------------------------------------
 
@@ -78,6 +87,7 @@ class Store:
     def insert_raw(
         self,
         source: str,
+        category: str,
         url: str,
         title: str,
         text: str | None,
@@ -89,17 +99,20 @@ class Store:
         self.con.execute(
             """
             INSERT OR IGNORE INTO article
-              (url_hash, url, title, title_norm, source, text,
+              (url_hash, url, title, title_norm, source, category, text,
                surfaced, published, fetched_at, extracted_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                h, url, title, _norm_title(title), source, text,
+                h, url, title, _norm_title(title), source, category, text,
                 surfaced, published,
                 now,
                 now if text is not None else None,
             ),
         )
+        # Keep category updated even if the URL exists
+        self.con.execute("UPDATE article SET category = ? WHERE url_hash = ?", (category, h))
+        
         if surfaced:
             self.con.execute(
                 "UPDATE article SET surfaced = ? WHERE url_hash = ? AND surfaced IS NULL",
@@ -114,17 +127,17 @@ class Store:
 
     # --- select --------------------------------------------------------------
 
-    def pending_selection(self, source: str) -> list[sqlite3.Row]:
+    def pending_selection_by_category(self, category: str) -> list[sqlite3.Row]:
         cur = self.con.execute(
             """
-            SELECT url_hash, source, url, title, text
+            SELECT url_hash, source, category, url, title, text
               FROM article
-             WHERE source = ?
+             WHERE category = ?
                AND selection_status = 0
                AND text IS NOT NULL
              ORDER BY fetched_at ASC
             """,
-            (source,)
+            (category,)
         )
         return list(cur.fetchall())
 
@@ -183,27 +196,13 @@ class Store:
 
     # --- render --------------------------------------------------------------
 
-    def pending_render(self) -> list[sqlite3.Row]:
+    def latest_per_category(self, category: str, limit: int) -> list[sqlite3.Row]:
         cur = self.con.execute(
             """
-            SELECT url_hash, source, url, title, text, body, summary,
+            SELECT url_hash, source, category, url, title, text, body, summary,
                    surfaced, published, fetched_at
               FROM article
-             WHERE rendered_at IS NULL
-               AND summary     IS NOT NULL
-               AND text        IS NOT NULL
-               AND selection_status = 1
-            """
-        )
-        return list(cur.fetchall())
-
-    def latest_per_source(self, source: str, limit: int) -> list[sqlite3.Row]:
-        cur = self.con.execute(
-            """
-            SELECT url_hash, source, url, title, text, body, summary,
-                   surfaced, published, fetched_at
-              FROM article
-             WHERE source = ?
+             WHERE category = ?
                AND text     IS NOT NULL
                AND summary  IS NOT NULL
                AND rendered_at IS NULL
@@ -211,7 +210,7 @@ class Store:
              ORDER BY COALESCE(published, surfaced, fetched_at) DESC
              LIMIT ?
             """,
-            (source, limit),
+            (category, limit),
         )
         return list(cur.fetchall())
 

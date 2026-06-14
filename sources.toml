@@ -22,12 +22,14 @@
 
 [[source]]
 name = "Quanta Magazine"
+category = "Math"
 kind = "rss"
 url = "https://www.quantamagazine.org/feed/"
 limit = 1
 
 [[source]]
 name = "Terence Tao"
+category = "Math"
 kind = "rss"
 url = "https://terrytao.wordpress.com/feed/"
 limit = 1
@@ -36,12 +38,14 @@ limit = 1
 
 [[source]]
 name  = "SpaceNews"
+category = "Space"
 kind  = "rss"
 url   = "https://spacenews.com/feed/"
 limit = 1
 
 [[source]]
 name  = "Aviation Week Space"
+category = "Space"
 kind  = "rss"
 url   = "https://aviationweek.com/rss/space"
 limit = 1
@@ -50,36 +54,42 @@ limit = 1
 
 [[source]]
 name  = "Nature"
+category = "Science"
 kind  = "rss"
 url   = "https://www.nature.com/nature.rss"
 limit = 2
 
 [[source]]
 name  = "Nature Machine Intelligence"
+category = "Academic"
 kind  = "rss"
 url   = "https://www.nature.com/natmachintell.rss"
 limit = 1
 
 [[source]]
 name  = "arXiv: Optimization & Control"
+category = "Academic"
 kind  = "rss"
 url   = "https://export.arxiv.org/rss/math.OC"
 limit = 1
 
 [[source]]
 name  = "IEEE Spectrum Robotics"
+category = "Academic"
 kind  = "rss"
 url   = "https://spectrum.ieee.org/feeds/feed.rss?query=robotics"
 limit = 2
 
 [[source]]
 name  = "arXiv: Robotics"
+category = "Academic"
 kind  = "rss"
 url   = "https://export.arxiv.org/rss/cs.RO"
 limit = 2
 
 [[source]]
 name  = "DeepMind Research"
+category = "AI"
 kind  = "rss"
 url   = "https://deepmind.google/blog/rss.xml"
 limit = 1
@@ -88,18 +98,21 @@ limit = 1
 
 [[source]]
 name  = "BAIR Blog"
+category = "Artificial Intelligence"
 kind  = "rss"
 url   = "https://bair.berkeley.edu/blog/feed.xml"
 limit = 1
 
 [[source]]
 name = "Lil'Log"
+category = "Artificial Intelligence"
 kind = "rss"
 url = "https://lilianweng.github.io/index.xml"
 limit = 1
 
 [[source]]
 name = "The Gradient"
+category = "Artificial Intelligence"
 kind = "rss"
 url = "https://thegradient.pub/rss/"
 limit = 1
@@ -108,18 +121,21 @@ limit = 1
 
 [[source]]
 name  = "Sutter's Mill"
+category = "Programming"
 kind  = "rss"
 url   = "https://herbsutter.com/feed/"
 limit = 1
 
 [[source]]
 name  = "Armin Ronacher"
+category = "Programming"
 kind  = "rss"
 url   = "https://lucumr.pocoo.org/feed.atom"
 limit = 1
 
 [[source]]
 name  = "Julia Evans"
+category = "Programming"
 kind  = "rss"
 url   = "https://jvns.ca/atom.xml"
 limit = 1
@@ -128,6 +144,7 @@ limit = 1
 
 [[source]]
 name  = "Synthtopia"
+category = "Music"
 kind  = "rss"
 url   = "https://www.synthtopia.com/feed/"
 limit = 2
@@ -136,12 +153,14 @@ limit = 2
 
 [[source]]
 name  = "PetaPixel"
+category = "Photography"
 kind  = "rss"
 url   = "https://petapixel.com/feed/"
 limit = 1
 
 [[source]]
 name  = "35mmc"
+category = "Photography"
 kind  = "rss"
 url   = "https://www.35mmc.com/feed/"
 limit = 1
@@ -151,6 +170,7 @@ limit = 1
 
 [[source]]
 name = "Hacker News"
+category = "Hacker News"
 kind = "hn"
 limit = 6
 since_hours = 48
@@ -158,14 +178,22 @@ min_points = 250
 
 [[source]]
 name  = "Hackaday"
+category = "Hackaday"
 kind  = "rss"
 url   = "https://hackaday.com/blog/feed/"
 limit = 4
 since_hours = 48
 
 [preferences]
-prefer_category = ["space", "reinforcement learning", "cognitive science", "science", "scientific computing", "applied mathematics", "mechanical engineering", "robotics", "modular synthesis", "biology/ecology", "architecture", "systems", "control theory, dynamics", "state estimation"]
-less_prefer_category = ["war", "raspberry pi", "security", "genetics", "politics", "economics", "automotive"]
+default_category_limit = 1
+prefer_category = ["space", "simulation", "high performance computing", "photography", "3d scanning", "lidar", "signal processing", "reinforcement learning", "cognitive science", "neuroscience", "science", "geometry", "knowledge representation", "mechanisms", "machine tools", "scientific computing", "applied mathematics", "mechanical engineering", "robotics", "modular synthesis", "marine biology","ecology", "scuba diving", "underwater habitation", "architecture", "systems", "control theory, dynamics", "state estimation"]
+less_prefer_category = ["sports", "raspberry pi", "security", "genetics", "politics", "economics", "automotive", "cars", "recycling"]
 blacklist_words = ["Anthropic", "OpenAI", "Claude", "ChatGPT", "agentic"]
-interest = ["articles with technical depth and novelty", "articles with a unique, earned perspective", "Realistic and accurate AI news without hype","updates to tools I use (Matlab/Simulink, Julia, Wolfram Alpha)"]
+interest = ["Articles with technical depth and novelty", "Articles with a unique, earned perspective", "Only include high-value product reviews or comparisons, no ad articles or bloatware", "Realistic and accurate AI news without hype","Updates to tools I use (Matlab/Simulink, Julia, Wolfram Alpha)", "New tools, languages, techniques, and frameworks."]
 disinterest = ["sensationalism and repetitive verbosity"]
+
+[category_limits]
+"Math" = 2
+"Space" = 2
+"Hackaday" = 3
+"Hackaday" = 3
