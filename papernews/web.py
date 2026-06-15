@@ -64,9 +64,18 @@ WORKERS       = int(os.environ.get("PAPERNEWS_WORKERS", "8"))
 INGEST_EVERY  = int(os.environ.get("INGEST_INTERVAL_SECONDS", str(4 * 3600)))
 
 
-def _load_sources() -> list[dict]:
+def _load_config() -> tuple[list[dict], dict, dict]:
     with open(CONFIG_PATH, "rb") as f:
-        return tomllib.load(f).get("source", [])
+        cfg = tomllib.load(f)
+    sources = cfg.get("source", [])
+    prefs = cfg.get("preferences", {})
+    if isinstance(prefs, list):
+        prefs = prefs[0] if prefs else {}
+    cat_limits = cfg.get("category_limits", {})
+    return sources, prefs, cat_limits
+
+def _load_sources() -> list[dict]:
+    return _load_config()[0]
 
 
 # --- Build pipeline -------------------------------------------------------
@@ -100,7 +109,8 @@ def _build_pdf_for_key(key: str, store: Store, sources: list[dict]) -> Path:
         ensure_dir(CACHE_DIR)
 
         date_str = date.today().isoformat()
-        articles = _collect_current_edition(store, sources, date_str)
+        _, prefs, cat_limits = _load_config()
+        articles = _collect_current_edition(store, sources, prefs, cat_limits)
         decorations = _gather_decorations()
         # Use the cache dir as build workdir so .build/ stays beside the PDF.
         tmp_pdf = build_pdf(
@@ -139,9 +149,9 @@ def _do_ingest() -> None:
     if not _ingest_lock.acquire(blocking=False):
         return  # one ingest at a time
     try:
-        sources = _load_sources()
+        sources, prefs, cat_limits = _load_config()
         store = Store(STATE_PATH)
-        cmd_ingest(store, sources, WORKERS)
+        cmd_ingest(store, sources, prefs, cat_limits, WORKERS)
 
         # Optional post-ingest delivery hook. The hook is an executable on the
         # container's filesystem (usually dropped in via the bind volume) that
