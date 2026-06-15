@@ -98,7 +98,7 @@
   ((* for art in articles *))
     ((* if art.category != ns.prev *))
       #v(0.8em, weak: true)
-      #text(size: 8.5pt, weight: "bold", fill: luma(50%), smallcaps("((( art.category | typst )))"))
+      #text(size: 8.5pt, weight: "bold", fill: luma(50%), smallcaps([((( art.category | typst )))]))
       #v(0.2em, weak: true)
       ((* set ns.prev = art.category *))
     ((* endif *))
@@ -130,16 +130,16 @@
   ((* for art in articles *))
     ((* if art.category != ns.prev *))
       #v(0.8em, weak: true)
-      #text(size: 11pt, weight: "bold", font: "New Computer Modern", "((( art.category | typst )))")
+      #text(size: 11pt, weight: "bold", font: "New Computer Modern", [((( art.category | typst )))])
       #v(0.4em, weak: true)
       ((* set ns.prev = art.category *))
     ((* endif *))
     #block(breakable: true)[
-      #sourcelabel("((( art.source | typst )))")((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")["((( art.date | typst )))"]((* endif *)) #h(1fr) #text(size: 9pt, weight: "bold")[p. #context locate(<art((( loop.index )))>).page()] \
+      #sourcelabel([((( art.source | typst )))])((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")[[((( art.date | typst )))]]((* endif *)) #h(1fr) #text(size: 9pt, weight: "bold")[p. #context locate(<art((( loop.index )))>).page()] \
       #v(0.2em)
       #link(<art((( loop.index )))>)[*((( art.title | typst )))*] \
       #v(0.3em)
-      #text(size: 9.5pt, style: "italic")["((( art.summary | typst )))"]
+      #text(size: 9.5pt, style: "italic")[[((( art.summary | typst )))]]
       #v(1em)
     ]
   ((* endfor *))
@@ -172,9 +172,9 @@
   ((* endif *))
 
   // Print the Source inside the body, since the Category is now the major section header
-  #sourcelabel("((( art.category | typst )))") #sym.dot.c #text(size: 9pt, weight: "bold", fill: luma(30%))["((( art.source | typst )))"]((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")["((( art.date | typst )))"]((* endif *))
-  #articletitle("((( art.url | typst_url )))", "((( art.title | typst )))") <art((( loop.index )))>
-  #articlelede("((( art.summary | typst )))")
+  #sourcelabel([((( art.category | typst )))]) #sym.dot.c #text(size: 9pt, weight: "bold", fill: luma(30%))[[((( art.source | typst )))]]((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")[[((( art.date | typst )))]]((* endif *))
+  #articletitle("((( art.url | typst_url )))", [((( art.title | typst )))]) <art((( loop.index )))>
+  #articlelede([((( art.summary | typst )))])
 
   ((* if art.text | length > 2000 *))
     #columns(2, gutter: 1.5em)[

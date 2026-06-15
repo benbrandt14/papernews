@@ -31,7 +31,7 @@ def typst_escape(s) -> str:
     if s is None:
         return ""
     res = "".join(_TYPST_REPLACE.get(c, c) for c in str(s))
-    # Unconditionally escape all # to prevent hallucinated Typst functions
+    # Unconditionally escape all hashtags so titles like "#1" don't crash the compiler
     return res.replace('#', r'\#')
 
 
@@ -339,6 +339,14 @@ def typst_body(text: str, workdir: Path) -> str:
     stashed = _stash_typography(stashed)
     stashed, lnk_bits = _stash_links(stashed)
 
+    # --- NEW: Convert Markdown structures to Typst equivalents ---
+    # Convert Markdown headers to Typst headers
+    stashed = re.sub(r"^(#{1,6})\s+", lambda m: "=" * len(m.group(1)) + " ", stashed, flags=re.MULTILINE)
+    
+    # Convert Markdown unordered lists (asterisks) to Typst hyphens
+    stashed = re.sub(r"^(\s*)\*\s+", r"\1- ", stashed, flags=re.MULTILINE)
+    # -----------------------------------------------------------
+
     paras = (
         re.split(r"\n\s*\n+", stashed.strip())
         if "\n\n" in stashed
@@ -349,6 +357,16 @@ def typst_body(text: str, workdir: Path) -> str:
         p = p.strip()
         if not p:
             continue
+        
+        # --- NEW: Handle Markdown blockquotes ---
+        is_blockquote = False
+        if p.startswith(">"):
+            lines = p.split('\n')
+            # If all lines in this paragraph start with a blockquote marker
+            if all(line.lstrip().startswith('>') for line in lines):
+                is_blockquote = True
+                p = '\n'.join(line.lstrip()[1:].strip() for line in lines)
+        # ----------------------------------------
         
         # 1. Safely escape everything outside of the stashed markers
         rendered = typst_escape(p)
@@ -375,6 +393,9 @@ def typst_body(text: str, workdir: Path) -> str:
             
             if old == rendered:
                 break
+
+        if is_blockquote:
+            rendered = f"#quote(block: true)[\n{rendered}\n]"
 
         out.append(rendered)
 
