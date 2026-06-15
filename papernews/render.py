@@ -31,13 +31,14 @@ def typst_escape(s) -> str:
     if s is None:
         return ""
     res = "".join(_TYPST_REPLACE.get(c, c) for c in str(s))
-    return re.sub(r'#(?!table\b)', r'\#', res)
+    # Unconditionally escape all # to prevent hallucinated Typst functions
+    return res.replace('#', r'\#')
 
 
 def typst_url(url: str) -> str:
     if not url:
         return ""
-    return url.replace('"', '\\"')
+    return url.replace('\\', '\\\\').replace('"', '\\"')
 
 
 _FENCE_RE = re.compile(r"```[a-zA-Z0-9_+\-]*\s*\n?(.*?)```", re.DOTALL)

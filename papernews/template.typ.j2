@@ -154,7 +154,6 @@
 
 ((* set ns = namespace(prev_cat='') *))
 ((* for art in articles *))
-  [#<art((( loop.index )))>]
   
   ((* if art.category != ns.prev_cat *))
     #pagebreak(weak: true)
@@ -174,7 +173,7 @@
 
   // Print the Source inside the body, since the Category is now the major section header
   #sourcelabel("((( art.category | typst )))") #sym.dot.c #text(size: 9pt, weight: "bold", fill: luma(30%))["((( art.source | typst )))"]((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")["((( art.date | typst )))"]((* endif *))
-  #articletitle("((( art.url | typst_url )))", "((( art.title | typst )))")
+  #articletitle("((( art.url | typst_url )))", "((( art.title | typst )))") <art((( loop.index )))>
   #articlelede("((( art.summary | typst )))")
 
   ((* if art.text | length > 2000 *))
