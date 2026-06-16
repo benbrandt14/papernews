@@ -8,7 +8,32 @@ import sqlite3
 from . import llm
 
 
-def select_articles(category_name: str, rows: list[sqlite3.Row], limit: int, prefs: dict) -> tuple[list[str], list[str]]:
+
+def triage_arxiv(abstract: str) -> dict:
+    sys_prompt = (
+        "You are a scientific abstract triage system. "
+        "Categorize the paper into exactly one of three tiers based on the abstract: "
+        "'discard' (uninteresting or low quality), 'digest' (interesting but only needs a short summary), "
+        "or 'deep_dive' (highly novel, important, or relevant for full extraction). "
+        "You MUST output exactly a JSON object with this schema: "
+        "{\"action\": \"discard\" | \"digest\" | \"deep_dive\", \"tldr\": \"A 1-sentence summary (required if action is digest)\"}"
+    )
+    prompt = f"Abstract:\n{abstract}"
+    reply = llm.chat(sys_prompt, prompt, max_tokens=150)
+
+    # Try to parse JSON robustly
+    try:
+        # Extract json block if present
+        import re
+        match = re.search(r'\{.*?\}', reply, re.DOTALL)
+        if match:
+            return json.loads(match.group(0))
+        return json.loads(reply)
+    except Exception as e:
+        sys.stderr.write(f"  [warn] triage_arxiv JSON parse failed: {e}\n")
+        return {"action": "discard", "tldr": None}
+
+def select_articles(category_name: str, rows: list[sqlite3.Row], limit: int, prefs: dict, sources: list[dict], store) -> tuple[list[str], list[str]]:
     selected_hashes = []
     rejected_hashes = []
 
@@ -29,7 +54,7 @@ def select_articles(category_name: str, rows: list[sqlite3.Row], limit: int, pre
     # --- Stage 1: Hard Filter ---
     # Only reject articles that are functionally useless (e.g., extraction failed/too short)
     for r in rows:
-        if len(r["text"]) < 500: # Remove entries that are too short
+        if len(r["text"]) < 500 and r['source'] not in [s['name'] for s in sources if s.get('kind') == 'arxiv']: # Protect arxiv abstracts
             rejected_hashes.append(r["url_hash"])
         else:
             surviving.append(r)
@@ -109,6 +134,32 @@ def select_articles(category_name: str, rows: list[sqlite3.Row], limit: int, pre
             "If none meet the threshold, return index of the single best entry.\n"
             "CRITICAL: Do not explain your reasoning. Output ONLY the JSON array."
         )
+
+        # --- ARXIV TRIAGE INJECTION ---
+        # If all sources in this batch are of kind "arxiv", we use the triage system instead.
+        source_kind_map = {s["name"]: s.get("kind", "rss") for s in sources}
+        if all(source_kind_map.get(r["source"]) == "arxiv" for r in batch):
+            from .extract import extract_arxiv_html
+            for r in batch:
+                triage_data = triage_arxiv(r["text"])
+                if triage_data.get("action") == "discard":
+                    rejected_hashes.append(r["url_hash"])
+                else:
+                    selected_hashes.append(r["url_hash"])
+                    triage_data["abstract"] = r["text"]
+                    try:
+                        art = extract_arxiv_html(r["url"], r["title"], r["source"], triage_data)
+                        store.update_arxiv_article(
+                            url_hash=r["url_hash"],
+                            text=art.text,
+                            format=art.format,
+                            tldr=art.tldr
+                        )
+                    except Exception as e:
+                        sys.stderr.write(f"  [error] extract_arxiv_html failed for {r['url']}: {e}\n")
+                        selected_hashes.remove(r["url_hash"]); rejected_hashes.append(r["url_hash"]) # fallback reject
+            continue
+        # -----------------------------
 
         try:
             # Increased max_tokens so conversational fluff doesn't truncate the array

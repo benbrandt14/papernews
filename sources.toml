@@ -76,7 +76,7 @@ url   = "https://spectrum.ieee.org/feeds/feed.rss?query=robotics"
 [[source]]
 name  = "arXiv: Robotics"
 category = "Academic"
-kind  = "rss"
+kind  = "arxiv"
 url   = "https://export.arxiv.org/rss/cs.RO"
 
 # --- ML / AI -------------------------------------------------------------

@@ -164,28 +164,54 @@
       #line(length: 100%, stroke: 1.5pt)
       #v(2em)
     ]
+
+    ((* if art.category == "Academic" *))
+      ((* set digest_articles = articles | selectattr("category", "equalto", "Academic") | selectattr("format", "equalto", "digest") | list *))
+      ((* if digest_articles *))
+        #grid(
+          columns: (1fr,),
+          gutter: 1.5em,
+          ((* for dart in digest_articles *))
+            block(breakable: true)[
+              #text(weight: "bold", size: 11pt, link("((( dart.url | typst_url )))")[((( dart.title | typst )))]) \
+              ((* if dart.author *))#text(style: "italic", size: 9pt)[((( dart.author | typst )))] \ ((* endif *))
+              #v(0.4em)
+              #text(size: 10pt)[((( dart.tldr | typst )))]
+            ],
+          ((* endfor *))
+        )
+        #v(2.5em)
+        #align(center)[#line(length: 30%, stroke: 0.5pt)]
+        #v(2.5em)
+      ((* endif *))
+    ((* endif *))
+
     ((* set ns.prev_cat = art.category *))
-  ((* else *))
+  ((* elif art.format != "digest" *))
     #v(2.5em)
     #align(center)[#line(length: 30%, stroke: 0.5pt)]
     #v(2.5em)
   ((* endif *))
 
-  // Print the Source inside the body, since the Category is now the major section header
-  #sourcelabel([((( art.category | typst )))]) #sym.dot.c #text(size: 9pt, weight: "bold", fill: luma(30%))[[((( art.source | typst )))]]((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")[[((( art.date | typst )))]]((* endif *))
-  #articletitle("((( art.url | typst_url )))", [((( art.title | typst )))]) <art((( loop.index )))>
-  #articlelede([((( art.summary | typst )))])
+  ((* if art.format != "digest" *))
+    // Print the Source inside the body, since the Category is now the major section header
+    #sourcelabel([((( art.category | typst )))]) #sym.dot.c #text(size: 9pt, weight: "bold", fill: luma(30%))[[((( art.source | typst )))]]((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")[[((( art.date | typst )))]]((* endif *))
+    #articletitle("((( art.url | typst_url )))", [((( art.title | typst )))]) <art((( loop.index )))>
+    #articlelede([((( art.summary | typst )))])
 
-  ((* if art.text | length > 2000 *))
-    #columns(2, gutter: 1.5em)[
+    ((* if art.text | length > 2000 *))
+      #columns(2, gutter: 1.5em)[
+        ((( art.text | typst_body )))
+      ]
+    ((* else *))
       ((( art.text | typst_body )))
-    ]
-  ((* else *))
-    ((( art.text | typst_body )))
-  ((* endif *))
+    ((* endif *))
 
-  // Force long articles to break to a new page so the next article starts fresh
-  ((* if art.text | length > 3000 *))
-    #pagebreak(weak: true)
+    // Force long articles to break to a new page so the next article starts fresh
+    ((* if art.text | length > 3000 *))
+      #pagebreak(weak: true)
+    ((* endif *))
+  ((* else *))
+    <art((( loop.index )))>
   ((* endif *))
 ((* endfor *))

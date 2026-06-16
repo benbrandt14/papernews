@@ -37,7 +37,10 @@ CREATE TABLE IF NOT EXISTS article (
     summarized_at    TEXT,
     rewritten_at     TEXT,
     rendered_at      TEXT,              
-    selection_status INTEGER DEFAULT 0  -- 0: pending, 1: selected, -1: rejected
+    selection_status INTEGER DEFAULT 0,  -- 0: pending, 1: selected, -1: rejected
+    format           TEXT DEFAULT 'standard',
+    tldr             TEXT,
+    author           TEXT
 );
 """
 
@@ -62,6 +65,12 @@ def _migrate(con) -> None:
         con.execute("ALTER TABLE article ADD COLUMN selection_status INTEGER DEFAULT 0")
     if "category" not in cols:
         con.execute("ALTER TABLE article ADD COLUMN category TEXT DEFAULT 'Uncategorized'")
+    if "format" not in cols:
+        con.execute("ALTER TABLE article ADD COLUMN format TEXT DEFAULT 'standard'")
+    if "tldr" not in cols:
+        con.execute("ALTER TABLE article ADD COLUMN tldr TEXT")
+    if "author" not in cols:
+        con.execute("ALTER TABLE article ADD COLUMN author TEXT")
     con.commit()
 
 
@@ -103,6 +112,7 @@ class Store:
         text: str | None,
         surfaced: str | None = None,
         published: str | None = None,
+        author: str | None = None,
     ) -> None:
         now = _now()
         h = _url_hash(url)
@@ -110,14 +120,15 @@ class Store:
             """
             INSERT OR IGNORE INTO article
               (url_hash, url, title, title_norm, source, category, text,
-               surfaced, published, fetched_at, extracted_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               surfaced, published, fetched_at, extracted_at, author)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 h, url, title, _norm_title(title), source, category, text,
                 surfaced, published,
                 now,
                 now if text is not None else None,
+                author,
             ),
         )
         # Keep category updated even if the URL exists
@@ -157,6 +168,17 @@ class Store:
         self.con.executemany(
             "UPDATE article SET selection_status = ? WHERE url_hash = ?",
             [(status, h) for h in url_hashes],
+        )
+        self.con.commit()
+
+    def update_arxiv_article(self, url_hash: str, text: str, format: str, tldr: str | None) -> None:
+        self.con.execute(
+            """
+            UPDATE article
+               SET text = ?, format = ?, tldr = ?
+             WHERE url_hash = ?
+            """,
+            (text, format, tldr, url_hash)
         )
         self.con.commit()
 
@@ -210,7 +232,7 @@ class Store:
         cur = self.con.execute(
             """
             SELECT url_hash, source, category, url, title, text, body, summary,
-                   surfaced, published, fetched_at
+                   surfaced, published, fetched_at, format, tldr, author
               FROM article
              WHERE category = ?
                AND text     IS NOT NULL

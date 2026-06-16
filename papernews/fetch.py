@@ -23,6 +23,7 @@ class RawItem:
     title: str
     surfaced: str | None = None  
     rss_content: str | None = None # ADDED: Capture the raw RSS text
+    author: str | None = None
 
 
 _HN_SEARCH = "https://hn.algolia.com/api/v1/search"
@@ -96,4 +97,6 @@ def fetch_rss(source_name: str, feed_url: str, limit: int = 20) -> Iterator[RawI
         elif hasattr(entry, "summary"):
             rss_content = entry.summary
             
-        yield RawItem(source=source_name, url=url, title=title, surfaced=surfaced, rss_content=rss_content)
+        author = getattr(entry, "author", None)
+
+        yield RawItem(source=source_name, url=url, title=title, surfaced=surfaced, rss_content=rss_content, author=author)

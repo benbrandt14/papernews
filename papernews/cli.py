@@ -77,7 +77,7 @@ def cmd_gather(store: Store, sources: list[dict], force: bool = False) -> int:
                     since_hours=src.get("since_hours", 48),
                     min_points=src.get("min_points", 50),
                 )
-            elif kind == "rss":
+            elif kind in ("rss", "arxiv"):
                 items = fetch_rss(name, src["url"], limit=fetch_limit)
             elif kind == "wikipedia_events":
                 items = fetch_wikipedia_events(
@@ -103,11 +103,17 @@ def cmd_gather(store: Store, sources: list[dict], force: bool = False) -> int:
                 else:
                     store.insert_raw(
                         source=it.source, category=category, url=it.url, title=it.title,
-                        text=None, surfaced=it.surfaced,
+                        text=None, surfaced=it.surfaced, author=getattr(it, "author", None),
                     )
                     continue
             try:
-                art = extract(it.url, it.title, it.source)
+                if kind == "arxiv":
+                    from .extract import Article
+                    # For arxiv, do not fetch the full text here to save time and bypass Trafilatura.
+                    # We store the abstract (from RSS content) as text.
+                    art = Article(source=it.source, url=it.url, title=it.title, text=it.rss_content or "")
+                else:
+                    art = extract(it.url, it.title, it.source)
             except Exception as e:
                 _log(f"  [error] extract: {it.title[:60]}: {e}")
                 art = None
@@ -117,7 +123,7 @@ def cmd_gather(store: Store, sources: list[dict], force: bool = False) -> int:
             if not text or len(text.strip()) < 200:
                 store.insert_raw(
                     source=it.source, category=category, url=it.url, title=it.title,
-                    text=None, surfaced=it.surfaced,
+                    text=None, surfaced=it.surfaced, author=getattr(it, "author", None),
                 )
                 failed_count += 1
                 _log(f"  - {it.title[:70]}  (no readable content)")
@@ -126,7 +132,7 @@ def cmd_gather(store: Store, sources: list[dict], force: bool = False) -> int:
                 pub = pub or it.surfaced
                 store.insert_raw(
                     source=it.source, category=category, url=it.url, title=it.title,
-                    text=text, surfaced=it.surfaced, published=pub,
+                    text=text, surfaced=it.surfaced, published=pub, author=getattr(it, "author", None),
                 )
                 new_count += 1
                 _log(f"  + {it.title[:70]}  ({len(text)} chars)")
@@ -158,7 +164,7 @@ def cmd_select(store: Store, sources: list[dict], prefs: dict, cat_limits: dict)
             continue
             
         _log(f"[select] Category '{cat}': evaluating {len(pending)} pending (limit {limit})")
-        selected, rejected = select_articles(cat, pending, limit, prefs)
+        selected, rejected = select_articles(cat, pending, limit, prefs, sources, store)
         
         if selected:
             store.set_selection_status(selected, 1)
@@ -326,6 +332,9 @@ def _collect_current_edition(store: Store, sources: list[dict], prefs: dict, cat
                 "text": r["body"] if r["body"] else r["text"],
                 "summary": r["summary"],
                 "date": _format_date(r["published"] or r["surfaced"]),
+                "format": r["format"],
+                "tldr": r["tldr"],
+                "author": r["author"],
             })
     return out
 
