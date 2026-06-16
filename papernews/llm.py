@@ -19,6 +19,7 @@ def chat(system: str, user: str, max_tokens: int) -> str:
 
 
 def _gemini(system: str, user: str, max_tokens: int) -> str:
+    """Send request to Gemini API with exponential backoff."""
     from google import genai
     from google.genai import errors, types
 
@@ -51,6 +52,7 @@ def _gemini(system: str, user: str, max_tokens: int) -> str:
 
 
 def _ollama(system: str, user: str, max_tokens: int) -> str:
+    """Send request to local Ollama instance."""
     import httpx
 
     host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")

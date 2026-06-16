@@ -8,6 +8,7 @@ from trafilatura.metadata import extract_metadata
 
 @dataclass
 class Article:
+    """Container for extracted article text."""
     source: str
     url: str
     title: str
@@ -16,6 +17,7 @@ class Article:
 
 
 def extract(url: str, title: str, source: str) -> Article | None:
+    """Extract main body text from URL."""
     downloaded = trafilatura.fetch_url(url)
     if not downloaded:
         return None

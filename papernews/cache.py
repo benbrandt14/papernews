@@ -1,11 +1,4 @@
-"""On-disk cache for the current edition's PDF + cover preview.
-
-The current edition is determined by:
-  - the high-water mark of new content (max fetched_at in the store)
-  - the sources config (sources.toml hashed)
-
-When either changes, the cache key changes and a rebuild is triggered.
-"""
+"""Cache PDF + cover preview."""
 from __future__ import annotations
 
 import hashlib
@@ -34,13 +27,16 @@ def edition_key(content_token: str, sources_config: list[dict]) -> str:
 
 
 def pdf_path(cache_dir: Path, key: str) -> Path:
+    """Return path to PDF cache file."""
     return cache_dir / f"{key}.pdf"
 
 
 def preview_path(cache_dir: Path, key: str) -> Path:
+    """Return path to preview PNG cache file."""
     return cache_dir / f"{key}.png"
 
 
 def ensure_dir(cache_dir: Path) -> Path:
+    """Ensure cache directory exists."""
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir

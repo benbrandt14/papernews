@@ -54,6 +54,7 @@ _MAX_CHARS = 16000
 
 
 def rewrite(title: str, text: str) -> str:
+    """Rewrite a single article."""
     return rewrite_batch([(title, text)])[0]
 
 

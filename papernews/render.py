@@ -28,6 +28,7 @@ _TYPST_REPLACE = {
 }
 
 def typst_escape(s) -> str:
+    """Escape string for Typst markup."""
     if s is None:
         return ""
     res = "".join(_TYPST_REPLACE.get(c, c) for c in str(s))
@@ -36,6 +37,7 @@ def typst_escape(s) -> str:
 
 
 def typst_url(url: str) -> str:
+    """Clean URL for Typst links."""
     if not url:
         return ""
     return url.replace('\\', '\\\\').replace('"', '\\"')
@@ -63,6 +65,7 @@ _EMPH_US_RE = re.compile(r"(?<![a-zA-Z0-9_])_(?!\s)(.+?)(?<!\s)_(?![a-zA-Z0-9_])
 
 
 def _stash_typography(text: str) -> str:
+    """Convert basic Markdown typography to Typst."""
     
     def stash_b(m: re.Match) -> str: 
         return f"\x00BSTART\x00{m.group(1)}\x00BEND\x00"
@@ -78,6 +81,7 @@ def _stash_typography(text: str) -> str:
 
 
 def _stash_links(text: str) -> tuple[str, list[str]]:
+    """Extract Markdown links to safely bypass escaping."""
     bits: list[str] = []
 
     def stash(m: re.Match) -> str:
@@ -94,6 +98,7 @@ def _stash_links(text: str) -> tuple[str, list[str]]:
 
 
 def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
+    """Extract and download Markdown images."""
     bits: list[str] = []
 
     def stash(m: re.Match) -> str:
@@ -211,6 +216,7 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
 
 
 def _render_code_block(code: str) -> str:
+    """Format code blocks for Typst."""
     fence_len = 3
     while "`" * fence_len in code:
         fence_len += 1
@@ -219,6 +225,7 @@ def _render_code_block(code: str) -> str:
 
 
 def _process_inline(text: str) -> str:
+    """Process inline markdown elements."""
     parts = _INLINE_RE.split(text)
     out = []
     for i, part in enumerate(parts):
@@ -239,6 +246,7 @@ def _process_inline(text: str) -> str:
 
 
 def _stash_math(text: str) -> tuple[str, list[str]]:
+    """Extract math equations to bypass escaping."""
     bits: list[str] = []
 
     def stash(m: re.Match) -> str:
@@ -286,7 +294,7 @@ _LEADING_DATE_RE = re.compile(
 )
 
 def _strip_leading_metadata(text: str) -> str:
-    """Robustly strips leading LLM hallucinations like dates or redundant article titles."""
+    """Strip leading dates and redundant titles."""
     lines = text.split("\n")
     
     while lines:
@@ -306,6 +314,7 @@ def _strip_leading_metadata(text: str) -> str:
 
 
 def typst_body(text: str, workdir: Path) -> str:
+    """Convert markdown body to Typst markup."""
     if not text:
         return ""
         
@@ -403,6 +412,7 @@ def typst_body(text: str, workdir: Path) -> str:
 
 
 def _env(tpl_dir: Path, workdir: Path) -> jinja2.Environment:
+    """Configure Jinja environment for Typst templates."""
     env = jinja2.Environment(
         block_start_string="((*",
         block_end_string="*))",

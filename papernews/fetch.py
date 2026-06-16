@@ -11,6 +11,7 @@ import requests
 
 
 def _clean_title(s: str | None) -> str:
+    """Clean whitespace from title."""
     if not s:
         return ""
     return " ".join(html.unescape(s).split())
@@ -18,6 +19,7 @@ def _clean_title(s: str | None) -> str:
 
 @dataclass
 class RawItem:
+    """Container for fetched feed item."""
     source: str
     url: str
     title: str
@@ -34,6 +36,7 @@ def fetch_hn(
     since_hours: int = 48,
     min_points: int = 50,
 ) -> Iterator[RawItem]:
+    """Fetch feed items."""
     since = int(time.time() - since_hours * 3600)
     params = {
         "tags": "story",
@@ -62,6 +65,7 @@ def fetch_wikipedia_events(
     source_name: str = "World news",
     days_back: int = 1,
 ) -> Iterator[RawItem]:
+    """Fetch feed items."""
     from datetime import date as _date, timedelta as _td
     from .wiki import current_events_url, current_events_title
 
@@ -77,6 +81,7 @@ def fetch_wikipedia_events(
 
 
 def fetch_rss(source_name: str, feed_url: str, limit: int = 20) -> Iterator[RawItem]:
+    """Fetch feed items."""
     d = feedparser.parse(feed_url)
     for entry in d.entries[:limit]:
         url = getattr(entry, "link", None)

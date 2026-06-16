@@ -21,11 +21,13 @@ from .wiki import (
 
 
 def _log(msg: str) -> None:
+    """Log message with timestamp."""
     sys.stderr.write(msg.rstrip() + "\n")
     sys.stderr.flush()
 
 
 def _load_config(path: Path) -> tuple[list[dict], dict, dict]:
+    """Load and parse configuration file."""
     with open(path, "rb") as f:
         cfg = tomllib.load(f)
         
@@ -42,7 +44,7 @@ def _load_config(path: Path) -> tuple[list[dict], dict, dict]:
 # --- stages -----------------------------------------------------------------
 
 def cmd_clean(state_path: Path, out_dir: Path, reset_db: bool) -> int:
-    """Clears out local temporary build artifacts and optionally resets database state."""
+    """Clear local build artifacts and optional reset db."""
     build_dir = out_dir / ".build"
     if build_dir.exists():
         shutil.rmtree(build_dir)
@@ -60,6 +62,7 @@ def cmd_clean(state_path: Path, out_dir: Path, reset_db: bool) -> int:
 
 
 def cmd_gather(store: Store, sources: list[dict], force: bool = False) -> int:
+    """Fetch new articles from sources."""
     new_count = 0
     failed_count = 0
     for src in sources:
@@ -136,6 +139,7 @@ def cmd_gather(store: Store, sources: list[dict], force: bool = False) -> int:
 
 
 def cmd_select(store: Store, sources: list[dict], prefs: dict, cat_limits: dict) -> int:
+    """Select articles for the next edition."""
     from .select import select_articles
     
     total_sel = 0
@@ -180,10 +184,12 @@ def cmd_select(store: Store, sources: list[dict], prefs: dict, cat_limits: dict)
 _BATCH_SIZE = 8
 
 def _chunks(seq: list, n: int) -> list[list]:
+    """Yield successive n-sized chunks from seq."""
     return [seq[i:i + n] for i in range(0, len(seq), n)]
 
 
 def cmd_summarize(store: Store, workers: int) -> int:
+    """Summarize unsummarized articles."""
     from .summarize import summarize_batch
     pending = store.pending_summary()
     if not pending:
@@ -226,6 +232,7 @@ def cmd_summarize(store: Store, workers: int) -> int:
 
 
 def cmd_rewrite(store: Store, workers: int) -> int:
+    """Rewrite un-rewritten articles."""
     from .rewrite import rewrite_batch
     pending = store.pending_rewrite()
     if not pending:
@@ -268,6 +275,7 @@ def cmd_rewrite(store: Store, workers: int) -> int:
 
 
 def _format_date(iso: str | None) -> str:
+    """Format ISO date string to human-readable format."""
     if not iso:
         return ""
     try:
@@ -277,6 +285,7 @@ def _format_date(iso: str | None) -> str:
 
 
 def _gather_decorations() -> dict:
+    """Gather world news, quote, and trivia for cover."""
     decorations: dict = {}
     try:
         wn = fetch_world_news()
@@ -303,6 +312,7 @@ def _gather_decorations() -> dict:
 
 
 def _collect_current_edition(store: Store, sources: list[dict], prefs: dict, cat_limits: dict) -> list[dict]:
+    """Collect selected articles for current edition."""
     out: list[dict] = []
     
     categories = []
@@ -331,6 +341,7 @@ def _collect_current_edition(store: Store, sources: list[dict], prefs: dict, cat
 
 
 def cmd_render(store: Store, date: str, out_dir: Path, sources: list[dict], prefs: dict, cat_limits: dict) -> int:
+    """Render PDF for current edition."""
     articles = _collect_current_edition(store, sources, prefs, cat_limits)
     if not articles:
         _log("[render] no ready articles in store yet")
@@ -356,6 +367,7 @@ def cmd_render(store: Store, date: str, out_dir: Path, sources: list[dict], pref
 
 
 def cmd_ingest(store: Store, sources: list[dict], prefs: dict, cat_limits: dict, workers: int, force_gather: bool = False, skip_rewrite: bool = False) -> int:
+    """Run complete ingest pipeline."""
     rc = cmd_gather(store, sources, force=force_gather)
     if rc: return rc
     rc = cmd_select(store, sources, prefs, cat_limits)
@@ -370,6 +382,7 @@ def cmd_ingest(store: Store, sources: list[dict], prefs: dict, cat_limits: dict,
 
 
 def cmd_status(store: Store) -> int:
+    """Print current database status."""
     c = store.counts()
     print(f"total articles         : {c['total']}")
     print(f"  unreadable           : {c['unreadable']}")
@@ -385,6 +398,7 @@ def cmd_status(store: Store) -> int:
 # --- CLI --------------------------------------------------------------------
 
 def main(argv: list[str] | None = None) -> int:
+    """Main CLI entrypoint."""
     p = argparse.ArgumentParser(prog="papernews")
     p.add_argument("--config", type=Path, default=Path("sources.toml"))
     # Default output is to the root directory

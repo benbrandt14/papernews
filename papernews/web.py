@@ -1,32 +1,4 @@
-"""Flask web service for papernews.
-
-Routes:
-  GET /              landing page (cover preview + 'Read today' link)
-  GET /digest.pdf    current edition PDF (cached, built on demand)
-  GET /preview.png   page-1 PNG of the current edition
-  GET /sources       JSON list of configured sources + counts
-  GET /healthz       liveness probe
-
-Background:
-  APScheduler runs `ingest` every INGEST_INTERVAL_SECONDS (default 4h).
-
-Environment:
-  PAPERNEWS_STATE        path to state.db          (default: state.db)
-  PAPERNEWS_CONFIG       path to sources.toml      (default: sources.toml)
-  PAPERNEWS_CACHE        path to cache dir         (default: archive/cache)
-  PAPERNEWS_WORKERS      LLM workers               (default: 8)
-
-  Scheduling — pick one:
-    INGEST_INTERVAL_SECONDS    every N seconds         (default: 14400 = 4h)
-    INGEST_SCHEDULE            "HH:MM,HH:MM,..." cron-style fixed times
-    INGEST_TIMEZONE            IANA tz, used with INGEST_SCHEDULE (default: UTC)
-
-  Post-ingest delivery hook:
-    POST_INGEST_HOOK           executable on disk; receives the PDF path as $1
-    POST_INGEST_HOOK_TIMEOUT   seconds (default: 300)
-
-  ANTHROPIC_API_KEY      required for the Claude SDK
-"""
+"""Flask web service for papernews."""
 from __future__ import annotations
 
 import os
@@ -54,6 +26,7 @@ from .store import Store
 # --- Config helpers -------------------------------------------------------
 
 def _cfg_path(env_var: str, default: str) -> Path:
+    """Get path from environment variable or default."""
     return Path(os.environ.get(env_var, default))
 
 
@@ -65,6 +38,7 @@ INGEST_EVERY  = int(os.environ.get("INGEST_INTERVAL_SECONDS", str(4 * 3600)))
 
 
 def _load_config() -> tuple[list[dict], dict, dict]:
+    """Load sources config, preferences, and category limits."""
     with open(CONFIG_PATH, "rb") as f:
         cfg = tomllib.load(f)
     sources = cfg.get("source", [])
@@ -75,6 +49,7 @@ def _load_config() -> tuple[list[dict], dict, dict]:
     return sources, prefs, cat_limits
 
 def _load_sources() -> list[dict]:
+    """Load sources configuration."""
     return _load_config()[0]
 
 
@@ -86,6 +61,7 @@ _build_locks_guard = threading.Lock()
 
 
 def _lock_for(key: str) -> threading.Lock:
+    """Get a thread lock for a given key."""
     with _build_locks_guard:
         lock = _build_locks.get(key)
         if lock is None:
@@ -95,6 +71,7 @@ def _lock_for(key: str) -> threading.Lock:
 
 
 def _current_key(store: Store, sources: list[dict]) -> str:
+    """Get cache key for current edition."""
     return edition_key(store.max_fetched_at(), sources)
 
 
@@ -130,6 +107,7 @@ def _build_pdf_for_key(key: str, store: Store, sources: list[dict]) -> Path:
 
 
 def _build_preview_for_key(key: str, pdf: Path) -> Path:
+    """Build and cache PNG preview for a PDF."""
     out = preview_path(CACHE_DIR, key)
     if out.exists():
         return out
@@ -146,6 +124,7 @@ _ingest_lock = threading.Lock()
 
 
 def _do_ingest() -> None:
+    """Run background ingest cycle."""
     if not _ingest_lock.acquire(blocking=False):
         return  # one ingest at a time
     try:
@@ -177,6 +156,7 @@ def _do_ingest() -> None:
 # --- Flask app ------------------------------------------------------------
 
 def create_app() -> Flask:
+    """Create Flask application."""
     app = Flask(__name__, static_folder=None)
 
     @app.get("/healthz")

@@ -9,6 +9,7 @@ from . import llm
 
 
 def select_articles(category_name: str, rows: list[sqlite3.Row], limit: int, prefs: dict) -> tuple[list[str], list[str]]:
+    """Select articles up to limit, considering preferences."""
     selected_hashes = []
     rejected_hashes = []
 

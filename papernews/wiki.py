@@ -26,6 +26,7 @@ def current_events_url(d: date | None = None) -> str:
 
 
 def current_events_title(d: date | None = None) -> str:
+    """Return the Wikipedia title for the current events page."""
     if d is None:
         d = date.today()
     return f"World news — {d.strftime('%B %-d, %Y')}"
@@ -102,8 +103,7 @@ _TRAILING_SOURCE_RE = re.compile(r"\s*\(([^()]{1,40})\)\s*$")
 
 
 def _split_source(body: str) -> tuple[str, str | None]:
-    """Split a Wikipedia bullet into (text, source) where source is the
-    content of a trailing parenthetical citation, if any."""
+    """Extract trailing parenthetical citation from text."""
     m = _TRAILING_SOURCE_RE.search(body)
     if not m:
         return body.strip(), None
@@ -111,8 +111,7 @@ def _split_source(body: str) -> tuple[str, str | None]:
 
 
 def _parse_current_events_day(url: str) -> list[dict]:
-    """Extract news bullets from one day's portal page.
-    Returns [{"text": ..., "source": ...}, ...]; source may be None."""
+    """Extract news bullets from a Wikipedia current events page."""
     try:
         downloaded = trafilatura.fetch_url(url)
         text = trafilatura.extract(
@@ -160,8 +159,7 @@ _WESTERN_RE = re.compile(
 
 
 def fetch_tech_headlines(per_feed: int = 2, max_items: int = 5) -> list[dict]:
-    """Return up to max_items recent tech headlines with their source feed
-    and the article URL. [{"text", "source", "url"}, ...]"""
+    """Fetch recent tech headlines from select RSS feeds."""
     import feedparser
     import html as _html
 
@@ -187,8 +185,7 @@ def fetch_tech_headlines(per_feed: int = 2, max_items: int = 5) -> list[dict]:
 
 
 def fetch_western_news(max_items: int = 2, days_back: int = 3) -> list[dict]:
-    """Pull Wikipedia Current Events bullets that mention a Western country
-    or major-ally context. Returns [{"text": ..., "source": ...}, ...]"""
+    """Fetch recent western-relevant news from Wikipedia."""
     from datetime import date as _date, timedelta as _td
 
     today = _date.today()
@@ -209,8 +206,7 @@ def fetch_western_news(max_items: int = 2, days_back: int = 3) -> list[dict]:
 
 
 def fetch_world_news() -> list[dict]:
-    """5 tech headlines + up to 2 Western-relevant Wikipedia items.
-    Each item: {"text": ..., "source": ...}."""
+    """Fetch combination of tech headlines and western news."""
     tech = fetch_tech_headlines(per_feed=2, max_items=5)
     western = fetch_western_news(max_items=2)
     return tech + western
@@ -219,8 +215,7 @@ def fetch_world_news() -> list[dict]:
 # --- News bullet summarization --------------------------------------------
 
 def summarize_world_news(items: list[dict]) -> list[dict]:
-    """Rewrite each news item into a single short sentence (~15 words),
-    preserving its source attribution. Single LLM call per batch."""
+    """Rewrite news items into single short sentences."""
     if not items:
         return items
 

@@ -37,6 +37,7 @@ _MAX_CHARS = 4000
 
 
 def summarize(title: str, text: str) -> str:
+    """Summarize a single article into two sentences."""
     return summarize_batch([(title, text)])[0]
 
 

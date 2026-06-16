@@ -8,14 +8,17 @@ from pathlib import Path
 
 
 def _url_hash(url: str) -> str:
+    """Generate short hash for URL."""
     return hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
 
 
 def _norm_title(title: str) -> str:
+    """Normalize title for exact duplicate matching."""
     return re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
 
 
 def _now() -> str:
+    """Return current ISO format datetime."""
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
@@ -49,6 +52,7 @@ CREATE INDEX IF NOT EXISTS idx_selection   ON article(selection_status);
 
 
 def _migrate(con) -> None:
+    """Initialize or update database schema."""
     cols = {r[1] for r in con.execute("PRAGMA table_info(article)")}
     if "body" not in cols:
         con.execute("ALTER TABLE article ADD COLUMN body TEXT")
@@ -66,6 +70,7 @@ def _migrate(con) -> None:
 
 
 class Store:
+    """SQLite storage for articles and metadata."""
     def __init__(self, path: Path):
         self.con = sqlite3.connect(str(path))
         self.con.row_factory = sqlite3.Row
@@ -80,7 +85,7 @@ class Store:
         self.con.executescript(_INDEXES)
 
     def sync_categories(self, source_category_map: dict[str, str]) -> None:
-        """Retroactively update categories in the DB to match current sources.toml"""
+        """Update categories to match current configuration."""
         for source, category in source_category_map.items():
             self.con.execute("UPDATE article SET category = ? WHERE source = ?", (category, source))
         self.con.commit()

@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def render_cover_png(pdf: Path, out_png: Path, dpi: int = 180) -> Path:
-    """Rasterize the first page of `pdf` to `out_png` using pdftoppm."""
+    """Rasterize first page of PDF to PNG."""
     if shutil.which("pdftoppm") is None:
         raise RuntimeError("pdftoppm not found (install poppler)")
 
