@@ -1,191 +1,78 @@
-#import "@preview/mitex:0.2.4": mi, mitex
+#set document(title: "Papernews Daily")
+#set page(width: 11in, height: 15in, margin: 0.8in)
+#set text(font: "Linux Libertine", size: 9pt)
+#set par(justify: true, first-line-indent: 1.2em, leading: 0.7em, spacing: 0pt)
 
-#set document(title: "Papernews", author: "Papernews")
-#set page(
-  width: 203mm,
-  height: 270mm,
-  margin: (inside: 20mm, outside: 20mm, top: 20mm, bottom: 20mm),
-  header: none,
-  footer: none
-)
-
-#set text(
-  font: ("New Computer Modern", "Linux Libertine", "Times New Roman"),
-  size: 10pt,
-  lang: "en",
-)
-
-#set par(
-  justify: true,
-  first-line-indent: 1em,
-  leading: 0.6em,
-  spacing: 0.6em
-)
-
-// Magazine typography
-#let sourcelabel(content) = text(size: 0.85em, tracking: 0.05em, smallcaps(content))
-
-#let sectionhead(content) = {
-  v(0.5em)
-  text(size: 1.2em, weight: "bold", font: "New Computer Modern", content)
-  v(0.2em)
-  line(length: 100%, stroke: 0.5pt)
-  v(0.4em)
+// --- Helper Functions ---
+#let headline(size: 18pt, content) = {
+  set text(size: size, weight: "bold", font: "Linux Libertine")
+  set par(justify: false, leading: 0.9em, first-line-indent: 0pt)
+  v(0.6em)
+  content
+  v(0.6em)
 }
 
-#let articletitle(url, title) = {
-  v(0.35em)
-  text(size: 1.3em, weight: "bold", link(url, title))
-  v(0.35em)
-}
-
-#let articlelede(content) = {
-  v(0.35em)
-  text(style: "italic", size: 10pt, content)
-  v(0.55em)
-  line(length: 100%, stroke: 0.4pt)
-  v(0.55em)
-}
-
-// --- Cover Page --------------------------------------------
 #align(center)[
-  #text(size: 50pt, weight: "bold", font: "New Computer Modern")[Papernews] \
+  #text(font: ("Old English Text MT", "Chomsky"), size: 68pt)[The Papernews] \
+  #v(0.2em)
+  #line(length: 100%, stroke: 2pt)
+  #v(1.5pt)
+  #line(length: 100%, stroke: 0.5pt)
   #v(0.4em)
-  #line(length: 100%, stroke: 1.5pt)
-  #v(0.3em)
-  #text(size: 10pt, tracking: 0.15em, smallcaps[((( date | typst ))) #h(1fr) ((( articles | length ))) Articles #h(1fr) Daily Edition])
-  #v(0.3em)
-  #line(length: 100%, stroke: 1.5pt)
+  #text(size: 9pt, smallcaps[((( run_time )))])
+  #v(0.4em)
+  #line(length: 100%, stroke: 0.5pt)
+  #v(1.5pt)
+  #line(length: 100%, stroke: 2pt)
 ]
 #v(1.5em)
 
-#columns(3, gutter: 1.5em)[
-
-  ((* if decorations.quote *))
-  #text(size: 10.5pt, style: "italic")[ ((( decorations.quote.text | typst ))) ] \
-  #align(right)[
-    #text(size: 9pt, smallcaps[--- ((* if decorations.quote.author *))((( decorations.quote.author | typst )))((* else *))Anonymous((* endif *))])
-  ]
-  #v(1em)
-  ((* endif *))
-
-  ((* if decorations.world_news *))
-  #sectionhead("World News")
-  ((* for item in decorations.world_news *))
-    #block(breakable: false)[
-      #set par(first-line-indent: 0pt, justify: false)
-      ((* if item.url *))#link("((( item.url | typst_url )))")[*((( item.text | typst )))*]((* else *))*((( item.text | typst )))*((* endif *))
-      ((* if item.source *))#text(size: 8pt, style: "italic", fill: luma(40%))[ \ ((( item.source | typst )))]((* endif *))
-    ]
-    #v(0.8em)
-  ((* endfor *))
-  ((* endif *))
-
-  ((* if decorations.dyk *))
-  #sectionhead("Did you know...")
-  #set par(first-line-indent: 0pt, justify: false)
-  ((* for fact in decorations.dyk *))
-    #block(breakable: true)[
-      #sym.dots ((( fact | typst )))
-    ]
-    #v(0.6em)
-  ((* endfor *))
-  ((* endif *))
-
-  #sectionhead("Index")
-  #set par(first-line-indent: 0pt, justify: false)
-  ((* set ns = namespace(prev='') *))
-  ((* for art in articles *))
-    ((* if art.category != ns.prev *))
-      #v(0.8em, weak: true)
-      #text(size: 8.5pt, weight: "bold", fill: luma(50%), smallcaps([((( art.category | typst )))]))
-      #v(0.2em, weak: true)
-      ((* set ns.prev = art.category *))
-    ((* endif *))
-    #block(breakable: true)[
-      #link(<art((( loop.index )))>)[#text(size: 9.5pt)[((( art.title | typst )))]]
-    ]
-    #v(0.4em)
-  ((* endfor *))
-
-] 
-
-#pagebreak()
-
-// --- Front matter: headlines + ledes --------------------------------------
-#set page(
-  footer: align(center)[#context counter(page).display()],
-  margin: (inside: 20mm, outside: 20mm, top: 24mm, bottom: 24mm)
-)
-#counter(page).update(1)
-
-#text(size: 16pt, weight: "bold", font: "New Computer Modern", "In this issue")
-#v(0.6em)
-#line(length: 100%, stroke: 1pt)
-#v(1em)
-
-#columns(2, gutter: 2em)[
-  #set par(first-line-indent: 0pt)
-  ((* set ns = namespace(prev='') *))
-  ((* for art in articles *))
-    ((* if art.category != ns.prev *))
-      #v(0.8em, weak: true)
-      #text(size: 11pt, weight: "bold", font: "New Computer Modern", [((( art.category | typst )))])
-      #v(0.4em, weak: true)
-      ((* set ns.prev = art.category *))
-    ((* endif *))
-    #block(breakable: true)[
-      #sourcelabel([((( art.source | typst )))])((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")[[((( art.date | typst )))]]((* endif *)) #h(1fr) #text(size: 9pt, weight: "bold")[p. #context locate(<art((( loop.index )))>).page()] \
-      #v(0.2em)
-      #link(<art((( loop.index )))>)[*((( art.title | typst )))*] \
-      #v(0.3em)
-      #text(size: 9.5pt, style: "italic")[[((( art.summary | typst )))]]
-      #v(1em)
-    ]
-  ((* endfor *))
-]
-
-#pagebreak()
-
-// --- Articles -------------------------------------------------------------
-#set par(first-line-indent: 1.2em, leading: 0.65em)
-#set par(spacing: 0.65em)
-#show figure.caption: it => text(size: 8pt, style: "italic", it.body)
-
-((* set ns = namespace(prev_cat='') *))
-((* for art in articles *))
+// --- Front Page Grid ---
+#grid(
+  columns: (1fr, 2fr, 1fr),
+  gutter: 1.8em,
   
-  ((* if art.category != ns.prev_cat *))
-    #pagebreak(weak: true)
-    #align(center)[
-      #v(2em)
-      #text(size: 24pt, weight: "bold", font: "New Computer Modern")[((( art.category | typst )))]
-      #v(0.5em)
-      #line(length: 100%, stroke: 1.5pt)
-      #v(2em)
-    ]
-    ((* set ns.prev_cat = art.category *))
-  ((* else *))
-    #v(2.5em)
-    #align(center)[#line(length: 30%, stroke: 0.5pt)]
-    #v(2.5em)
-  ((* endif *))
+  // Left Sidebar
+  [
+    #set par(first-line-indent: 0pt)
+    #align(center)[#text(size: 10pt, weight: "bold", smallcaps["News Summary"])]
+    #line(length: 100%, stroke: 0.5pt)
+    
+    (((* for chunk in sidebars *)))
+      #headline(size: 11pt)[((( chunk.headline )))]
+      #text(size: 8.5pt)[((( chunk.body_markdown )))]
+      #v(1em)
+    (((* endfor *)))
+  ],
+  
+  // Center: The Hero Story
+  [
+    (((* if hero *)))
+      #headline(size: 24pt)[((( hero.headline )))]
+      ((( hero.body_markdown )))
+    (((* endif *)))
+  ],
+  
+  // Right Sidebar: Academic Digests
+  [
+    #set par(first-line-indent: 0pt)
+    #align(center)[#text(size: 10pt, weight: "bold", smallcaps["Academic Radar"])]
+    #line(length: 100%, stroke: 0.5pt)
+    
+    (((* for chunk in academics *)))
+      #headline(size: 11pt)[((( chunk.headline )))]
+      #text(size: 8pt)[((( chunk.body_markdown )))]
+      #v(1em)
+    (((* endfor *)))
+  ]
+)
 
-  // Print the Source inside the body, since the Category is now the major section header
-  #sourcelabel([((( art.category | typst )))]) #sym.dot.c #text(size: 9pt, weight: "bold", fill: luma(30%))[[((( art.source | typst )))]]((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")[[((( art.date | typst )))]]((* endif *))
-  #articletitle("((( art.url | typst_url )))", [((( art.title | typst )))]) <art((( loop.index )))>
-  #articlelede([((( art.summary | typst )))])
-
-  ((* if art.text | length > 2000 *))
-    #columns(2, gutter: 1.5em)[
-      ((( art.text | typst_body )))
-    ]
-  ((* else *))
-    ((( art.text | typst_body )))
-  ((* endif *))
-
-  // Force long articles to break to a new page so the next article starts fresh
-  ((* if art.text | length > 3000 *))
-    #pagebreak(weak: true)
-  ((* endif *))
-((* endfor *))
+#pagebreak()
+// --- Standard Articles ---
+#columns(2, gutter: 2em)[
+  (((* for chunk in standards *)))
+    #headline(size: 16pt)[((( chunk.headline )))]
+    ((( chunk.body_markdown )))
+    #v(2em)
+  (((* endfor *)))
+]

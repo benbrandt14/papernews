@@ -1,10 +1,12 @@
+import tomllib
 import pluggy
 from prefect import flow, task
 from papernews.models import RawDocument, LayoutChunk
 from papernews.core.router import ROUTER
-from papernews.plugins import hookspecs, rss_plugin
+from papernews.plugins import hookspecs, rss_plugin, academic_plugin
+from papernews.render import build_pdf
 
-@task(retries=3)
+@task(retries=3, retry_delay_seconds=5)
 def process_single_document(doc: RawDocument) -> LayoutChunk:
     """Processes a single document using the appropriate strategy from ROUTER."""
     strategy = ROUTER.get(doc.content_type)
@@ -16,36 +18,47 @@ def process_single_document(doc: RawDocument) -> LayoutChunk:
 def build_newspaper():
     """Main execution flow to ingest, process, and render the newspaper."""
 
-    # 1. Setup pluggy
+    # 1. Load the actual configuration
+    try:
+        with open("sources.toml", "rb") as f:
+            config = tomllib.load(f)
+    except FileNotFoundError:
+        print("Warning: sources.toml not found. Using an empty configuration.")
+        config = {}
+
+    # 2. Setup pluggy
     pm = pluggy.PluginManager("papernews")
     pm.add_hookspecs(hookspecs)
     pm.register(rss_plugin)
+    pm.register(academic_plugin)
 
-    # 2. Ingest
-    # Use a dummy config since this is a mock setup
-    dummy_config = {}
+    # 3. Ingest documents using the active plugins
     docs = []
-    # call hooks, pluggy returns a list of results per plugin, so we flatten it
-    results = pm.hook.fetch_documents(config=dummy_config)
+    results = pm.hook.fetch_documents(config=config)
     for result_list in results:
         docs.extend(result_list)
 
     print(f"Fetched {len(docs)} documents.")
 
-    # 3. Process documents concurrently (Prefect maps the task)
-    # Mapping in prefect 2/3 is done with task.map()
+    # 4. Process documents concurrently (Prefect maps the task automatically)
     chunks = process_single_document.map(docs)
 
-    # Optional wait for completion if using deferral, but generally map resolves
-    # depending on engine. To simply print we can iterate over the futures/results.
-    print(f"Generated {len(chunks)} layout chunks:")
-    for chunk in chunks:
-        # In prefect 2/3, chunks from map are often futures. Resolving them:
+# 5. Resolve the generated LayoutChunks
+    print(f"Generated {len(chunks)} layout chunks.")
+    valid_chunks = []
+    for chunk_future in chunks:
         try:
-            resolved_chunk = chunk.result() if hasattr(chunk, 'result') else chunk
-            print(f" - {resolved_chunk.headline} ({resolved_chunk.template_type})")
+            # Resolve the Prefect future object
+            chunk = chunk_future.result() if hasattr(chunk_future, 'result') else chunk_future
+            valid_chunks.append(chunk)
         except Exception as e:
             print(f" - Failed to process a document: {e}")
+
+    # 6. Render the Newspaper!
+    if valid_chunks:
+        build_pdf(valid_chunks)
+    else:
+        print("No valid chunks generated. Skipping PDF build.")
 
 if __name__ == "__main__":
     build_newspaper()
