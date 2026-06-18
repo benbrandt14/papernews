@@ -7,16 +7,19 @@
   footer: none
 )
 
-#set text(font: "Linux Libertine", size: 11pt, lang: "en")
+#set text(font: "New Computer Modern", size: 11pt, lang: "en")
 #set par(justify: true, first-line-indent: 1.1em, leading: 0.65em, spacing: 0.65em)
 
-// --- Universal Layout Macros ---
 #let sourcelabel(content) = text(size: 0.85em, tracking: 0.05em, smallcaps(content))
 #let sectionhead(content) = text(size: 1.2em, weight: "bold", content)
 
 #let articletitle(url, title) = {
   v(0.35em)
-  text(size: 1.2em, weight: "bold", link(url, title))
+  if url != "" {
+    text(size: 1.2em, weight: "bold", link(url, title))
+  } else {
+    text(size: 1.2em, weight: "bold", title)
+  }
   v(0.35em)
 }
 
@@ -28,13 +31,14 @@
   v(0.55em)
 }
 
+// SAFE MACRO: Evaluates Typst blocks natively
 #let generic_article_block(source, url, title, summary, body_text) = {
   block(breakable: false)[
-    #if source != "" [#sourcelabel([#source])]
-    #if title != "" [#articletitle(url, [#title])]
-    #if summary != "" [#articlelede([#summary])]
+    #source
+    #articletitle(url, title)
+    #summary
   ]
-  [#body_text]
+  body_text
   v(2.5em)
 }
 
@@ -51,7 +55,6 @@
 #v(1em)
 
 #columns(2)[
-  // Left Column: The Index
   #sectionhead("Index")
   #v(0.8em)
   ((* for category, items in regions.index.items() *))
@@ -65,13 +68,13 @@
   
   #colbreak()
   
-  // Right Column: Sidebars (Quotes, News Briefs)
+  // Safe Brackets `[` used here instead of strings `"`
   ((* for item in regions.sidebar *))
     #generic_article_block(
-      "((( item.source )))", 
+      [((* if item.source *))#sourcelabel([((( item.source | typst )))])((* endif *))], 
       "((( item.url | typst_url )))", 
-      "((( item.title | typst )))", 
-      "((( item.summary | typst )))", 
+      [((( item.title | typst )))], 
+      [((* if item.summary *))#articlelede([((( item.summary | typst )))])((* endif *))], 
       [((( item.body_markdown | typst_body )))]
     )
   ((* endfor *))
@@ -95,10 +98,10 @@
   #columns(2, gutter: 2em)[
     ((* for item in items *))
       #generic_article_block(
-        "((( item.source )))", 
+        [((* if item.source *))#sourcelabel([((( item.source | typst )))])((* endif *))], 
         "((( item.url | typst_url )))", 
-        "((( item.title | typst )))", 
-        "((( item.summary | typst )))", 
+        [((( item.title | typst )))], 
+        [((* if item.summary *))#articlelede([((( item.summary | typst )))])((* endif *))], 
         [((( item.body_markdown | typst_body )))]
       )
     ((* endfor *))
