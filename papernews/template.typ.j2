@@ -1,4 +1,4 @@
-#set document(title: "Papernews", author: "Papernews Generator")
+#set document(title: "Papernews", author: "Papernews")
 #set page(
   width: 203mm,
   height: 270mm,
@@ -6,29 +6,13 @@
   header: none,
   footer: none
 )
-#set text(
-  font: "Linux Libertine",
-  size: 11pt,
-  lang: "en",
-)
-#set par(
-  justify: true,
-  first-line-indent: 1.1em,
-  leading: 0.65em,
-  spacing: 0.65em
-)
-#show par: set block(spacing: 0.65em) 
 
-// --- Helper Functions ---
+#set text(font: "Linux Libertine", size: 11pt, lang: "en")
+#set par(justify: true, first-line-indent: 1.1em, leading: 0.65em, spacing: 0.65em)
+
+// --- Universal Layout Macros ---
 #let sourcelabel(content) = text(size: 0.85em, tracking: 0.05em, smallcaps(content))
-
-#let sectionhead(content) = {
-  v(1em)
-  text(size: 1.2em, weight: "bold", content)
-  v(0.3em)
-  line(length: 100%, stroke: 1pt)
-  v(0.5em)
-}
+#let sectionhead(content) = text(size: 1.2em, weight: "bold", content)
 
 #let articletitle(url, title) = {
   v(0.35em)
@@ -41,77 +25,83 @@
   text(style: "italic", content)
   v(0.55em)
   line(length: 100%, stroke: 0.4pt)
-  v(1em)
+  v(0.55em)
+}
+
+#let generic_article_block(source, url, title, summary, body_text) = {
+  block(breakable: false)[
+    #if source != "" [#sourcelabel([#source])]
+    #if title != "" [#articletitle(url, [#title])]
+    #if summary != "" [#articlelede([#summary])]
+  ]
+  [#body_text]
+  v(2.5em)
 }
 
 // ==========================================
 // THE COVER PAGE
 // ==========================================
 #align(center)[
-  #text(size: 48pt, weight: "bold")[Papernews] \
-  #v(1em)
-  #text(size: 14pt, style: "italic")[((( run_time )))]
+  #text(size: 36pt, weight: "bold", "Papernews") \
+  #v(0.7em)
+  #text(size: 11pt)[((( date | typst )))]
 ]
-#v(2em)
+#v(1em)
+#line(length: 100%, stroke: 0.4pt)
+#v(1em)
 
-// Rigid 3-Column Masonry
-#columns(3, gutter: 2em)[
-  
-  // 1. The Index
+#columns(2)[
+  // Left Column: The Index
   #sectionhead("Index")
-  (((* for category, arts in articles_by_category.items() *)))
+  #v(0.8em)
+  ((* for category, items in regions.index.items() *))
     #text(weight: "bold")[((( category )))] \
-    (((* for art in arts *)))
-      #link("((( art.url )))")[((( art.title )))] \
-      #v(0.4em)
-    (((* endfor *)))
-    #v(1em)
-  (((* endfor *)))
-
+    ((* for item in items *))
+      #link("((( item.url | typst_url )))")[((( item.title | typst )))] \
+      #v(0.3em)
+    ((* endfor *))
+    #v(0.8em)
+  ((* endfor *))
+  
   #colbreak()
-
-  // 2. Quote of the Day
-  (((* if quote *)))
-    #sectionhead("Quote of the Day")
-    #text(style: "italic")[((( quote.body_markdown )))]
-    #v(1.5em)
-  (((* endif *)))
-
-  // 3. Current Events
-  (((* if wiki_events *)))
-    #sectionhead("Current Events")
-    (((* for event in wiki_events *)))
-      #text(weight: "bold")[((( event.title )))] \
-      ((( event.body_markdown )))
-      #v(1em)
-    (((* endfor *)))
-  (((* endif *)))
+  
+  // Right Column: Sidebars (Quotes, News Briefs)
+  ((* for item in regions.sidebar *))
+    #generic_article_block(
+      "((( item.source )))", 
+      "((( item.url | typst_url )))", 
+      "((( item.title | typst )))", 
+      "((( item.summary | typst )))", 
+      [((( item.body_markdown | typst_body )))]
+    )
+  ((* endfor *))
 ]
 
 // ==========================================
-// INTERIOR ARTICLES
+// THE INTERIOR PAGES
 // ==========================================
 #pagebreak()
-#set page(header: align(right)[#text(size: 9pt, smallcaps[Papernews Daily - ((( run_time )))])])
+#set page(footer: align(center)[#context counter(page).display()])
+#counter(page).update(1)
 
-(((* for category, arts in articles_by_category.items() *)))
+((* for category, items in regions.interior.items() *))
   #align(center)[
-    #text(size: 20pt, weight: "bold")[((( category )))]
+    #text(size: 18pt, weight: "bold")[((( category )))]
     #v(0.5em)
-    #line(length: 100%, stroke: 1.5pt)
+    #line(length: 40%, stroke: 1.5pt)
     #v(1.5em)
   ]
 
   #columns(2, gutter: 2em)[
-    (((* for art in arts *)))
-      #block(breakable: false)[
-        #sourcelabel([((( art.source )))])
-        #articletitle("((( art.url )))", [((( art.title )))])
-        #articlelede([((( art.summary )))])
-      ]
-      ((( art.body_markdown )))
-      #v(2.5em)
-    (((* endfor *)))
+    ((* for item in items *))
+      #generic_article_block(
+        "((( item.source )))", 
+        "((( item.url | typst_url )))", 
+        "((( item.title | typst )))", 
+        "((( item.summary | typst )))", 
+        [((( item.body_markdown | typst_body )))]
+      )
+    ((* endfor *))
   ]
   #pagebreak(weak: true)
-(((* endfor *)))
+((* endfor *))

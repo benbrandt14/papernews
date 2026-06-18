@@ -1,18 +1,24 @@
 from pydantic import BaseModel, Field
-from typing import Literal, Optional
+from typing import Literal
 
 class RawDocument(BaseModel):
     source_id: str
-    content_type: Literal["rss", "academic_pdf", "wiki_event", "wiki_quote"]
+    content_type: str  # e.g., "rss", "wiki_event", "github"
     raw_text: str
     metadata: dict = Field(default_factory=dict)
 
 class ArticleChunk(BaseModel):
-    content_type: Literal["rss", "academic_pdf", "wiki_event", "wiki_quote"]
+    # Layout Designation
+    region: Literal["index", "cover_feature", "sidebar", "interior"] = "interior"
+    
+    # Standardized Metadata
     category: str
     source: str
     title: str
+    url: str
+    
+    # Standardized Content
     summary: str
     body_markdown: str
-    url: str
+    
     priority: int = 3
