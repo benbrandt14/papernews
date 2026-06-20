@@ -444,29 +444,36 @@ def build_pdf(
     try:
         typst.compile(str(typst_path), output=str(pdf_dst))
     except typst.TypstError as e:
-        sys.stderr.write(f"\n[error] Typst compilation failed!\n")
+        sys.stderr.write(f"\n" + "="*70 + "\n")
+        sys.stderr.write(f"[FATAL] TYPST COMPILATION FAILED\n")
+        sys.stderr.write(f"="*70 + "\n")
+        sys.stderr.write(f"Error Message: {e}\n\n")
         
-        try:
-            line_match = re.search(r'line (\d+)', str(e), re.IGNORECASE)
-            if not line_match:
-                line_match = re.search(r':(\d+):\d+', str(e))
-                
-            if line_match:
-                err_line = int(line_match.group(1))
-                lines = typst_source.split('\n')
-                sys.stderr.write(f"[error] Context around line {err_line}:\n")
-                sys.stderr.write(f"----------------------------------------\n")
-                start = max(0, err_line - 4)
-                end = min(len(lines), err_line + 3)
-                for i in range(start, end):
-                    prefix = ">> " if i + 1 == err_line else "   "
-                    sys.stderr.write(f"{prefix}{i + 1:04d} | {lines[i]}\n")
-                sys.stderr.write(f"----------------------------------------\n")
-        except Exception as dump_e:
-            sys.stderr.write(f"[error] Could not print file context: {dump_e}\n")
+        lines = typst_source.split('\n')
+        line_match = re.search(r'line (\d+)', str(e), re.IGNORECASE)
+        if not line_match:
+            line_match = re.search(r':(\d+):\d+', str(e))
+            
+        if line_match:
+            err_line = int(line_match.group(1))
+            sys.stderr.write(f"[Context around line {err_line}]:\n")
+            start = max(0, err_line - 5)
+            end = min(len(lines), err_line + 5)
+            for i in range(start, end):
+                prefix = ">> " if i + 1 == err_line else "   "
+                sys.stderr.write(f"{prefix}{i + 1:04d} | {lines[i]}\n")
+        else:
+            # If Typst drops the line number, generate a numbered debug file
+            debug_path = workdir / f"{date}_DEBUG_NUMBERED.txt"
+            with open(debug_path, 'w', encoding="utf-8") as f:
+                for i, line in enumerate(lines):
+                    f.write(f"{i + 1:04d} | {line}\n")
+            
+            sys.stderr.write("[Context] Typst did not provide a specific line number.\n")
+            sys.stderr.write("(This usually means a layout rule was violated, like pagebreaks inside columns).\n\n")
+            sys.stderr.write(f"--> I have generated a numbered source file for you to inspect here:\n")
+            sys.stderr.write(f"--> {debug_path}\n")
 
-        sys.stderr.write(f"[error] You can inspect the generated source file here: {typst_path}\n")
-        sys.stderr.write(f"[error] Typst error details:\n{e}\n\n")
-        raise RuntimeError(f"typst failed on {typst_path}: {e}")
+        sys.stderr.write(f"="*70 + "\n")
 
     return pdf_dst

@@ -16,6 +16,7 @@ dependencies = [
     "typst>=0.11.0",
     "pillow>=12.2.0",
     "prefect>=3.7.5",
+    "beautifulsoup4>=4.15.0",
 ]
 
 # LLM backend is selected via LLM_BACKEND env var ("gemini" or "ollama").

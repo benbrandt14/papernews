@@ -161,12 +161,13 @@ interest = ["Articles with technical depth and novelty", "Articles with a unique
 disinterest = ["sensationalism and repetitive verbosity","local announcements or updates not directed to a general audience"]
 
 [category_limits]
-"Science" = 1
+"Science" = 3
 "Math" = 2
 "Space" = 2
-"Academic" = 2
+"Academic" = 3
 "Artificial Intellegence" = 2
 "Programming" = 2
-"Music" = 2
-"Photography" = 2
-"Hacker News" = 5
+"Music" = 1
+"Photography" = 1
+"Hacker News" = 3
+"Hackaday" = 3

@@ -8,13 +8,12 @@ from email.utils import parsedate_to_datetime
 
 from urllib.parse import urlparse
 from papernews.core.router import llm_format_body, llm_select_article, llm_summarize_article
-
 import os
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 from papernews.render import build_pdf
-from papernews.models import ArticleChunk, RawDocument, Telemetry
+from papernews.models import ArticleChunk, RawDocument, Telemetry, FrontpageDecorations
 
 # Configuration
 MAX_BUDGET = 12
@@ -53,8 +52,9 @@ def stage1_ingestion(source_config: dict) -> List[RawDocument]:
     
     # In a real app, you would load hookspecs and module plugins here
     # For now, we manually register the RSS plugin module
-    from papernews.plugins import rss_plugin
+    from papernews.plugins import rss_plugin, hn_plugin
     pm.register(rss_plugin)
+    pm.register(hn_plugin)
     
     # pm.hook.fetch_sources returns a list of lists (one per plugin)
     plugin_results = pm.hook.fetch_sources(source_config=source_config)
@@ -145,7 +145,7 @@ def stage3_hybrid_construction(documents: List[RawDocument], prefs: dict) -> tup
             
         # 2. Summarization & Formatting
         summary_text, t2 = llm_summarize_article(doc)
-        formatted_markdown, t3 = llm_format_body(doc.raw_text)
+        formatted_markdown, t3 = llm_format_body(doc)
         
         # Aggregate
         total_run_telemetry += (t2 + t3)
@@ -185,41 +185,59 @@ def stage3_hybrid_construction(documents: List[RawDocument], prefs: dict) -> tup
         
     return processed_chunks, total_run_telemetry
 
-@task(name="Stage 4: Legacy Adapter")
+@task(name="Stage 4A: Legacy Adapter")
 def stage4_legacy_adapter(chunks: List[ArticleChunk]) -> List[dict]:
     legacy_articles = []
     fallback_today_str = date.today().strftime("%b %d, %Y")
     
     for chunk in chunks:
         display_date = chunk.relative_time or chunk.published_date or fallback_today_str
-        
-        safe_summary = re.sub(r'(?<!\$)\$(?!\$)', r'\\$', chunk.summary)
-        safe_body = re.sub(r'(?<!\$)\$(?!\$)', r'\\$', chunk.body_markdown)
 
         article_dict = {
             "category": chunk.category,
             "source": chunk.source,
             "title": chunk.title,
             "url": chunk.url,
-            "summary": safe_summary,
+            "summary": chunk.summary,            # Pass straight through
             "date": display_date, 
-            "tokens": chunk.telemetry.formatted_tokens, # "1.3k"
-            "cost": chunk.telemetry.formatted_cost,     # "0.015" or "~ 0"
-            "text": safe_body, 
+            "tokens": chunk.telemetry.formatted_tokens,
+            "cost": chunk.telemetry.formatted_cost,
+            "text": chunk.body_markdown,         # Pass straight through
         }
         legacy_articles.append(article_dict)
         
     return legacy_articles
 
+
+
+@task(name="Stage 4B: Template Decorations")
+def stage4b_fetch_decorations(source_config: dict) -> dict:
+    pm = pluggy.PluginManager("papernews")
+
+    from papernews.plugins import wiki_plugin
+    pm.register(wiki_plugin)
+    
+    # Execute hooks (returns a list of FrontpageDecorations models)
+    results = pm.hook.fetch_decorations(source_config=source_config)
+    
+    # Start with an empty, default model
+    master_decorations = FrontpageDecorations()
+    
+    # Merge all plugin models together (overwriting defaults with actual data)
+    for res in results:
+        for field, value in res.model_dump(exclude_unset=True).items():
+            setattr(master_decorations, field, value)
+            
+    # Convert back to a dictionary for the Jinja/Typst renderer
+    return master_decorations.model_dump()
+
 @task(name="Stage 5: Bespoke Renderer")
-def stage5_bespoke_render(legacy_articles: List[dict], total_telemetry: Telemetry) -> Path:
+def stage5_bespoke_render(legacy_articles: List[dict], total_telemetry: Telemetry, decorations) -> Path:
     out_dir = Path(os.getcwd()) / "output"
     out_dir.mkdir(exist_ok=True)
     
-    # Do not change standard `today_str` because build_pdf uses it for the output filename!
     today_str = date.today().strftime("%Y-%m-%d") 
     
-    # Grab the EXACT time down to the minute for the front page
     generation_timestamp = datetime.now().strftime("%b %d, %Y at %I:%M %p")
 
     decorations = {
@@ -253,9 +271,10 @@ def run_papernews(source_config: dict):
     
     # STAGE 4
     legacy_articles = stage4_legacy_adapter(article_chunks)
+    decorations = stage4b_fetch_decorations(source_config)
     
     # STAGE 5: Pass the telemetry to the renderer
-    pdf_path = stage5_bespoke_render(legacy_articles, total_telemetry)
+    pdf_path = stage5_bespoke_render(legacy_articles, total_telemetry, decorations)
     
     return pdf_path
 

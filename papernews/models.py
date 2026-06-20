@@ -56,6 +56,13 @@ class Telemetry(BaseModel):
         c = self.cost_cents
         return "~ 0" if c < 0.05 else f"{c:.3f}"
 
+class FrontpageDecorations(BaseModel):
+    """Defines the allowed widgets and sidebars for the PDF template."""
+    world_news: list[str] = Field(
+        default_factory=lambda: ["World news currently unavailable."],
+        description="Bullet points for the Wikipedia current events sidebar."
+    )
+    
 class ArticleChunk(BaseModel):
     content_type: Literal["rss", "academic_pdf", "wiki_event", "wiki_quote"]
     category: str

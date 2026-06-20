@@ -4,10 +4,12 @@ from typing import Optional
 from prefect import task, get_run_logger
 from google import genai
 from google.genai import types
+from papernews.store import SimpleStore
 
 from papernews.models import RawDocument, LLMArticleSelection, LLMArticleSummary, Telemetry
 
 client = genai.Client()
+db = SimpleStore()
 
 def _get_telemetry(response) -> Telemetry:
     """Helper to safely extract tokens from a Gemini response."""
@@ -25,6 +27,13 @@ def llm_select_article(doc: RawDocument, prefs: dict) -> tuple[bool, Telemetry]:
     Returns (is_selected, Telemetry)
     """
     logger = get_run_logger()
+    cache_key = f"select_{doc.source_id}"
+    
+    # 1. Check Cache
+    cached_json = db.get_cache(cache_key)
+    if cached_json:
+        logger.info(f"Cache Hit: Selection for '{doc.metadata.get('title')[:30]}...'")
+        return LLMArticleSelection.model_validate_json(cached_json).is_selected, Telemetry()
     
     title = doc.metadata.get('title', 'Unknown Title')
     score = doc.metadata.get('heuristic_score', 3)
@@ -51,8 +60,11 @@ def llm_select_article(doc: RawDocument, prefs: dict) -> tuple[bool, Telemetry]:
         telemetry = _get_telemetry(response)
 
         if response.text:
-            result = LLMArticleSelection.model_validate_json(response.text)
-            return result.is_selected, telemetry
+            # 2. Save exact response to Cache
+            db.set_cache(cache_key, response.text)
+            
+            return LLMArticleSelection.model_validate_json(response.text).is_selected, telemetry
+            
         return False, telemetry
     except Exception as e:
         logger.error(f"Selection Error: {e}")
@@ -65,6 +77,14 @@ def llm_summarize_article(doc: RawDocument) -> tuple[str, Telemetry]:
     Returns (summary_text, Telemetry)
     """
     logger = get_run_logger()
+    cache_key = f"summary_{doc.source_id}"
+    
+    # 1. Check Cache
+    cached_json = db.get_cache(cache_key)
+    if cached_json:
+        logger.info(f"Cache Hit: Summary for '{doc.metadata.get('title')[:30]}...'")
+        return LLMArticleSummary.model_validate_json(cached_json).summary, Telemetry()
+    
     title = doc.metadata.get('title', 'Unknown Title')
     snippet = doc.raw_text[:1500] 
     
@@ -86,6 +106,7 @@ def llm_summarize_article(doc: RawDocument) -> tuple[str, Telemetry]:
         telemetry = _get_telemetry(response)
 
         if response.text:
+            db.set_cache(cache_key, response.text)
             result = LLMArticleSummary.model_validate_json(response.text)
             return result.summary, telemetry
         return "Summary unavailable.", telemetry
@@ -94,12 +115,19 @@ def llm_summarize_article(doc: RawDocument) -> tuple[str, Telemetry]:
         return "Summary unavailable.", Telemetry()
 
 @task(name="LLM: Strict Markdown Formatter", retries=3, retry_delay_seconds=10)
-def llm_format_body(raw_text: str) -> tuple[str, Telemetry]:
+def llm_format_body(doc: RawDocument) -> tuple[str, Telemetry]:
     """
     Case 3: Article formatting. asked "pretty please" not to modify content. 
     Returns (formatted_markdown, Telemetry)
     """
     logger = get_run_logger()
+    cache_key = f"format_{doc.source_id}"
+    
+    # 1. Check Cache
+    cached_string = db.get_cache(cache_key)
+    if cached_string:
+        logger.info(f"Cache Hit: Formatting for '{doc.metadata.get('title', 'Unknown Title')[:30]}...'")
+        return cached_string, Telemetry()
     
     system_instruction = """
     You are a strict typography and formatting engine.
@@ -109,6 +137,7 @@ def llm_format_body(raw_text: str) -> tuple[str, Telemetry]:
     - Format quotes (`>`) and code blocks (` ``` `).
     - Correctly format hyperlinks `[text](url)`.
     - Reformat bullet points and lists cleanly.
+    - For currency, escape dollar signs (like \\$5.00). Leave valid math equations enclosed in normal unescaped $
     - Identify and format section headers (`#`, `##`).
     
     CRITICAL RULES:
@@ -121,7 +150,7 @@ def llm_format_body(raw_text: str) -> tuple[str, Telemetry]:
     try:
         response = client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=raw_text,
+            contents=doc.raw_text,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 temperature=0.0
@@ -129,8 +158,15 @@ def llm_format_body(raw_text: str) -> tuple[str, Telemetry]:
         )
         
         telemetry = _get_telemetry(response)
-        clean_text = response.text.strip().replace("```markdown", "").replace("```", "").strip() if response.text else raw_text
+        
+        # Strip markdown code block wrappers if the LLM includes them
+        clean_text = response.text.strip().replace("```markdown", "").replace("```", "").strip() if response.text else doc.raw_text
+        
+        # 2. Save the raw text string to Cache
+        db.set_cache(cache_key, clean_text)
+        
         return clean_text, telemetry
+        
     except Exception as e:
         logger.warning(f"Formatting Error, falling back to deterministic raw text: {e}")
-        return raw_text, Telemetry()
+        return doc.raw_text, Telemetry()
