@@ -9,8 +9,8 @@ from papernews.models import RawDocument, LLMArticleSelection, LLMArticleSummary
 
 client = genai.Client()
 
-# TODO update below to use single telemetry thingy
 def _get_telemetry(response) -> Telemetry:
+    """Helper to safely extract tokens from a Gemini response."""
     if response.usage_metadata:
         return Telemetry(
             prompt_tokens=response.usage_metadata.prompt_token_count,
@@ -19,10 +19,10 @@ def _get_telemetry(response) -> Telemetry:
     return Telemetry()
 
 @task(name="LLM: Gatekeeper Selection", retries=3, retry_delay_seconds=10)
-def llm_select_article(doc: RawDocument, prefs: dict) -> tuple[bool, int, int]:
+def llm_select_article(doc: RawDocument, prefs: dict) -> tuple[bool, Telemetry]:
     """
     Case 1: Final article selection filter. 
-    Returns (is_selected, prompt_tokens, output_tokens)
+    Returns (is_selected, Telemetry)
     """
     logger = get_run_logger()
     
@@ -33,30 +33,22 @@ def llm_select_article(doc: RawDocument, prefs: dict) -> tuple[bool, int, int]:
     interests = prefs.get("interest", ["General high-quality news"])
     disinterests = prefs.get("disinterest", ["Clickbait", "Ads"])
     
-    prompt_text = f"""
-    Title: {title}
-    Local Rank Score (1 is highly relevant, 3 is low): {score}
-    
-    User Interests: {', '.join(interests)}
-    User Disinterests: {', '.join(disinterests)}
-    
-    Content Snippet:
-    {snippet}
-    """
-    
-    system_instruction = """
-    As a technical expert and concierge editor
-    evaluate the following snippet against the User's Interests and Disinterests.
-    Consider the Local Rank Score (where 1 means local keyword matching strongly preferred it).
-    Return ONLY a boolean 'is_selected' indicating if it belongs in the digest.
-    """
+    prompt_text = f"Title: {title}\nLocal Rank Score: {score}\nUser Interests: {', '.join(interests)}\nUser Disinterests: {', '.join(disinterests)}\nContent Snippet:\n{snippet}"
+    system_instruction = "As a technical expert and concierge editor evaluate the snippet. Return ONLY a boolean 'is_selected' indicating if it belongs in the digest."
 
     try:
-        response = client.models.generate_content(...)
-        pt = response.usage_metadata.prompt_token_count if response.usage_metadata else 0
-        ot = response.usage_metadata.candidates_token_count if response.usage_metadata else 0
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt_text,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                response_mime_type="application/json",
+                response_schema=LLMArticleSelection,
+                temperature=0.1
+            )
+        )
         
-        telemetry = Telemetry(prompt_tokens=pt, output_tokens=ot)
+        telemetry = _get_telemetry(response)
 
         if response.text:
             result = LLMArticleSelection.model_validate_json(response.text)
@@ -67,10 +59,10 @@ def llm_select_article(doc: RawDocument, prefs: dict) -> tuple[bool, int, int]:
         return False, Telemetry()
 
 @task(name="LLM: Article Summarization", retries=3, retry_delay_seconds=10)
-def llm_summarize_article(doc: RawDocument) -> tuple[str, int, int]:
+def llm_summarize_article(doc: RawDocument) -> tuple[str, Telemetry]:
     """
     Case 2: Summarization ONLY. Called only if the article survives the gatekeeper.
-    Returns (summary_text, prompt_tokens, output_tokens)
+    Returns (summary_text, Telemetry)
     """
     logger = get_run_logger()
     title = doc.metadata.get('title', 'Unknown Title')
@@ -80,10 +72,18 @@ def llm_summarize_article(doc: RawDocument) -> tuple[str, int, int]:
     system_instruction = "Write a concise, engaging 1-3 sentence summary of this article snippet. Do not include introductory text."
 
     try:
-        response = client.models.generate_content(...)
-        pt = response.usage_metadata.prompt_token_count if response.usage_metadata else 0
-        ot = response.usage_metadata.candidates_token_count if response.usage_metadata else 0
-        telemetry = Telemetry(prompt_tokens=pt, output_tokens=ot)
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt_text,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                response_mime_type="application/json",
+                response_schema=LLMArticleSummary,
+                temperature=0.3
+            )
+        )
+        
+        telemetry = _get_telemetry(response)
 
         if response.text:
             result = LLMArticleSummary.model_validate_json(response.text)
@@ -94,10 +94,10 @@ def llm_summarize_article(doc: RawDocument) -> tuple[str, int, int]:
         return "Summary unavailable.", Telemetry()
 
 @task(name="LLM: Strict Markdown Formatter", retries=3, retry_delay_seconds=10)
-def llm_format_body(raw_text: str) -> tuple[str, int, int]:
+def llm_format_body(raw_text: str) -> tuple[str, Telemetry]:
     """
     Case 3: Article formatting. asked "pretty please" not to modify content. 
-    Returns (formatted_markdown, prompt_tokens, output_tokens)
+    Returns (formatted_markdown, Telemetry)
     """
     logger = get_run_logger()
     
@@ -117,14 +117,19 @@ def llm_format_body(raw_text: str) -> tuple[str, int, int]:
     DO NOT change the author's words or content.
     Output ONLY the cleaned Markdown text.
     """
-    
+
     try:
-        response = client.models.generate_content(...)
-        pt = response.usage_metadata.prompt_token_count if response.usage_metadata else 0
-        ot = response.usage_metadata.candidates_token_count if response.usage_metadata else 0
-        telemetry = Telemetry(prompt_tokens=pt, output_tokens=ot)
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=raw_text,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.0
+            )
+        )
         
-        clean_text = response.text.strip().replace("```markdown", "").replace("```", "").strip()
+        telemetry = _get_telemetry(response)
+        clean_text = response.text.strip().replace("```markdown", "").replace("```", "").strip() if response.text else raw_text
         return clean_text, telemetry
     except Exception as e:
         logger.warning(f"Formatting Error, falling back to deterministic raw text: {e}")
