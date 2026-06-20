@@ -164,7 +164,7 @@ prefer_category = ["space", "simulation", "high performance computing", "photogr
 less_prefer_category = ["sports", "raspberry pi", "security", "genetics", "politics", "economics", "automotive", "cars", "recycling", "CSS", "UI/UX"]
 blacklist_words = ["Anthropic", "OpenAI", "Claude", "ChatGPT", "agentic"]
 interest = ["Articles with technical depth and novelty", "Articles with a unique, earned perspective", "Only include high-value product reviews or comparisons, no ad articles or bloatware", "Realistic and accurate AI news without hype","Updates to tools I use (Matlab/Simulink, Julia, Wolfram Alpha)", "New tools, languages, techniques, and frameworks."]
-disinterest = ["sensationalism and repetitive verbosity"]
+disinterest = ["sensationalism and repetitive verbosity","local announcements or updates not directed to a general audience"]
 
 [category_limits]
 "Science" = 1

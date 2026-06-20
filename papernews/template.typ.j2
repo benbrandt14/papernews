@@ -53,7 +53,7 @@
   #v(0.4em)
   #line(length: 100%, stroke: 1.5pt)
   #v(0.3em)
-  #text(size: 10pt, tracking: 0.15em, smallcaps[((( date | typst ))) #h(1fr) ((( articles | length ))) Articles #h(1fr) Daily Edition])
+  #text(size: 10pt, tracking: 0.15em, smallcaps[((( decorations.generation_time | typst ))) #h(1fr) ((( articles | length ))) Articles #h(1fr) ((( decorations.total_tokens ))) Tokens / ((( decorations.total_cost )))¢])
   #v(0.3em)
   #line(length: 100%, stroke: 1.5pt)
 ]
@@ -172,7 +172,7 @@
   ((* endif *))
 
   // Print the Source inside the body, since the Category is now the major section header
-  #sourcelabel([((( art.category | typst )))]) #sym.dot.c #text(size: 9pt, weight: "bold", fill: luma(30%))[[((( art.source | typst )))]]((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")[[((( art.date | typst )))]]((* endif *))
+  #sourcelabel([((( art.category | typst )))]) #sym.dot.c #text(size: 9pt, weight: "bold", fill: luma(30%))[((( art.source | typst )))]((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")[((( art.date | typst )))]((* endif *)) #h(1fr) #text(size: 8pt, fill: luma(50%))[((( art.tokens ))) tokens / ((( art.cost )))¢]
   #articletitle("((( art.url | typst_url )))", [((( art.title | typst )))]) <art((( loop.index )))>
   #articlelede([((( art.summary | typst )))])
 
