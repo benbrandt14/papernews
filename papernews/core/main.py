@@ -243,19 +243,19 @@ def run_papernews(source_config: dict):
     # STAGE 1
     raw_docs = stage1_ingestion(source_config)
     
-    # STAGE 2 (Now powered by sources.toml)
+    # STAGE 2
     filtered = triage_process_a_filter(raw_docs, prefs)
     ranked = triage_process_b_rank(filtered, prefs)
     budgeted = triage_process_c_budget(ranked, limits, prefs)
     
-    # STAGE 3
-    article_chunks = stage3_hybrid_construction(budgeted, prefs)
+    # STAGE 3: Unpack the tuple here
+    article_chunks, total_telemetry = stage3_hybrid_construction(budgeted, prefs)
     
     # STAGE 4
     legacy_articles = stage4_legacy_adapter(article_chunks)
     
-    # STAGE 5
-    pdf_path = stage5_bespoke_render(legacy_articles)
+    # STAGE 5: Pass the telemetry to the renderer
+    pdf_path = stage5_bespoke_render(legacy_articles, total_telemetry)
     
     return pdf_path
 
