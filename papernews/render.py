@@ -22,23 +22,24 @@ _TYPST_REPLACE = {
     "`": r"\`",
     "{": r"\{",
     "}": r"\}",
-    '"': r'\"',
+    '"': r"\"",
     "[": r"\[",
     "]": r"\]",
 }
+
 
 def typst_escape(s) -> str:
     if s is None:
         return ""
     res = "".join(_TYPST_REPLACE.get(c, c) for c in str(s))
     # Unconditionally escape all hashtags so titles like "#1" don't crash the compiler
-    return res.replace('#', r'\#')
+    return res.replace("#", r"\#")
 
 
 def typst_url(url: str) -> str:
     if not url:
         return ""
-    return url.replace('\\', '\\\\').replace('"', '\\"')
+    return url.replace("\\", "\\\\").replace('"', '\\"')
 
 
 _FENCE_RE = re.compile(r"```[a-zA-Z0-9_+\-]*\s*\n?(.*?)```", re.DOTALL)
@@ -63,11 +64,11 @@ _EMPH_US_RE = re.compile(r"(?<![a-zA-Z0-9_])_(?!\s)(.+?)(?<!\s)_(?![a-zA-Z0-9_])
 
 
 def _stash_typography(text: str) -> str:
-    
-    def stash_b(m: re.Match) -> str: 
+
+    def stash_b(m: re.Match) -> str:
         return f"\x00BSTART\x00{m.group(1)}\x00BEND\x00"
-    
-    def stash_i(m: re.Match) -> str: 
+
+    def stash_i(m: re.Match) -> str:
         return f"\x00ISTART\x00{m.group(1)}\x00IEND\x00"
 
     stashed = _STRONG_RE.sub(stash_b, text)
@@ -83,10 +84,10 @@ def _stash_links(text: str) -> tuple[str, list[str]]:
     def stash(m: re.Match) -> str:
         raw_text = m.group(1)
         url = m.group(2)
-        
+
         safe_text = typst_escape(raw_text)
         safe_url = typst_url(url)
-        
+
         bits.append(f'#link("{safe_url}")[{safe_text}]/**/')
         return f"\x00LNK{len(bits) - 1}\x00"
 
@@ -99,47 +100,62 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
     def stash(m: re.Match) -> str:
         raw_match = m.group(0)
         img_matches = _IMAGE_RE.findall(raw_match)
-        
+
         assets_dir = workdir / "assets"
         assets_dir.mkdir(parents=True, exist_ok=True)
-        
+
         processed_images = []
 
         for alt, url in img_matches:
             url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
-            
+
             existing = list(assets_dir.glob(f"{url_hash}.*"))
             filename = None
             img_path = None
-            
+
             if existing:
                 filename = existing[0].name
                 img_path = existing[0]
             else:
                 try:
-                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                    req = urllib.request.Request(
+                        url, headers={"User-Agent": "Mozilla/5.0"}
+                    )
                     with urllib.request.urlopen(req, timeout=10) as response:
                         data = response.read()
-                        
-                        if data.startswith(b'\xff\xd8'): ext = ".jpg"
-                        elif data.startswith(b'\x89PNG\r\n\x1a\n'): ext = ".png"
-                        elif data.startswith(b'GIF8'): ext = ".gif"
-                        elif data.startswith(b'RIFF') and data[8:12] == b'WEBP': ext = ".webp"
-                        elif b'<svg' in data[:1024].lower(): ext = ".svg"
+
+                        if data.startswith(b"\xff\xd8"):
+                            ext = ".jpg"
+                        elif data.startswith(b"\x89PNG\r\n\x1a\n"):
+                            ext = ".png"
+                        elif data.startswith(b"GIF8"):
+                            ext = ".gif"
+                        elif data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+                            ext = ".webp"
+                        elif b"<svg" in data[:1024].lower():
+                            ext = ".svg"
                         else:
                             ctype = response.info().get_content_type()
-                            if ctype == "image/png": ext = ".png"
-                            elif ctype == "image/gif": ext = ".gif"
-                            elif ctype == "image/webp": ext = ".webp"
-                            elif ctype == "image/svg+xml": ext = ".svg"
-                            elif ctype in ("image/jpeg", "image/jpg"): ext = ".jpg"
-                            else: raise ValueError(f"Unrecognized image data and content-type: {ctype}")
+                            if ctype == "image/png":
+                                ext = ".png"
+                            elif ctype == "image/gif":
+                                ext = ".gif"
+                            elif ctype == "image/webp":
+                                ext = ".webp"
+                            elif ctype == "image/svg+xml":
+                                ext = ".svg"
+                            elif ctype in ("image/jpeg", "image/jpg"):
+                                ext = ".jpg"
+                            else:
+                                raise ValueError(
+                                    f"Unrecognized image data and content-type: {ctype}"
+                                )
 
                         filename = f"{url_hash}{ext}"
                         img_path = assets_dir / filename
                         with open(img_path, "wb") as f:
                             f.write(data)
-                            
+
                 except Exception as e:
                     sys.stderr.write(f"  [warn] failed to fetch image {url}: {e}\n")
                     # If download fails, stash it immediately as a safe Typst link
@@ -149,7 +165,7 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
                     processed_images.append(f"\x00IMG{len(bits) - 1}\x00")
                     continue
 
-            aspect = 1.5 
+            aspect = 1.5
             width_px = 800
             if img_path and img_path.exists() and img_path.suffix != ".svg":
                 try:
@@ -163,7 +179,7 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
 
         out_str = ""
         current_valid_group = []
-        
+
         def flush_valid_group():
             nonlocal out_str
             if not current_valid_group:
@@ -173,26 +189,30 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
                 for filename, aspect, width_px in current_valid_group:
                     if aspect > 1.8 and width_px > 600:
                         fig_props = 'placement: auto, scope: "parent"'
-                        img_props = 'width: 100%'
+                        img_props = "width: 100%"
                     elif aspect < 0.9:
-                        fig_props = 'placement: auto'
-                        img_props = 'width: 55%'
+                        fig_props = "placement: auto"
+                        img_props = "width: 55%"
                     else:
-                        fig_props = 'placement: auto'
-                        img_props = 'width: 100%'
-                        
-                    figs.append(f'#figure(image("assets/{filename}", {img_props}), {fig_props})/**/')
-                    
+                        fig_props = "placement: auto"
+                        img_props = "width: 100%"
+
+                    figs.append(
+                        f'#figure(image("assets/{filename}", {img_props}), {fig_props})/**/'
+                    )
+
                 bits.append("\n".join(figs))
                 out_str += f"\x00IMG{len(bits) - 1}\x00"
             else:
                 grid_items = []
                 for filename, _, _ in current_valid_group:
                     grid_items.append(f'image("assets/{filename}", width: 100%)')
-                
+
                 cols = 2
-                grid_str = f'grid(columns: {cols}, gutter: 6pt, {", ".join(grid_items)})'
-                bits.append(f'#figure({grid_str}, placement: auto)/**/')
+                grid_str = (
+                    f'grid(columns: {cols}, gutter: 6pt, {", ".join(grid_items)})'
+                )
+                bits.append(f"#figure({grid_str}, placement: auto)/**/")
                 out_str += f"\x00IMG{len(bits) - 1}\x00"
             current_valid_group.clear()
 
@@ -229,11 +249,13 @@ def _process_inline(text: str) -> str:
             while "`" * fence_len in part:
                 fence_len += 1
             fence = "`" * fence_len
-            
+
             safe_part = part
-            if safe_part.startswith("`"): safe_part = " " + safe_part
-            if safe_part.endswith("`") or safe_part.endswith("\\"): safe_part = safe_part + " "
-            
+            if safe_part.startswith("`"):
+                safe_part = " " + safe_part
+            if safe_part.endswith("`") or safe_part.endswith("\\"):
+                safe_part = safe_part + " "
+
             out.append(f"{fence}{safe_part}{fence}")
     return "".join(out)
 
@@ -265,7 +287,7 @@ def _stash_math(text: str) -> tuple[str, list[str]]:
             fence_len = 3
 
         fence = "`" * fence_len
-        
+
         if is_display:
             bits.append(f"#mitex({fence}\n{content}\n{fence})/**/")
         else:
@@ -285,10 +307,11 @@ _LEADING_DATE_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+
 def _strip_leading_metadata(text: str) -> str:
     """Robustly strips leading LLM hallucinations like dates or redundant article titles."""
     lines = text.split("\n")
-    
+
     while lines:
         first = lines[0].strip()
         if not first:
@@ -297,18 +320,18 @@ def _strip_leading_metadata(text: str) -> str:
         if _LEADING_DATE_RE.fullmatch(first):
             lines.pop(0)
             continue
-        if re.match(r'^(=+|#+)\s+', first):
+        if re.match(r"^(=+|#+)\s+", first):
             lines.pop(0)
             continue
         break
-        
+
     return "\n".join(lines)
 
 
 def typst_body(text: str, workdir: Path) -> str:
     if not text:
         return ""
-        
+
     text = _strip_leading_metadata(text)
 
     blocks: list[str] = []
@@ -320,6 +343,7 @@ def typst_body(text: str, workdir: Path) -> str:
     stashed = _FENCE_RE.sub(stash_code, text)
 
     inline_code_bits: list[str] = []
+
     def stash_inline(m: re.Match) -> str:
         part = m.group(1)
         fence_len = 1
@@ -327,11 +351,13 @@ def typst_body(text: str, workdir: Path) -> str:
             fence_len += 1
         fence = "`" * fence_len
         safe_part = part
-        if safe_part.startswith("`"): safe_part = " " + safe_part
-        if safe_part.endswith("`") or safe_part.endswith("\\"): safe_part = safe_part + " "
+        if safe_part.startswith("`"):
+            safe_part = " " + safe_part
+        if safe_part.endswith("`") or safe_part.endswith("\\"):
+            safe_part = safe_part + " "
         inline_code_bits.append(f"{fence}{safe_part}{fence}")
         return f"\x00IC{len(inline_code_bits) - 1}\x00"
-    
+
     stashed = _INLINE_RE.sub(stash_inline, stashed)
 
     stashed, img_bits = _stash_images(stashed, workdir)
@@ -341,8 +367,13 @@ def typst_body(text: str, workdir: Path) -> str:
 
     # --- NEW: Convert Markdown structures to Typst equivalents ---
     # Convert Markdown headers to Typst headers
-    stashed = re.sub(r"^(#{1,6})\s+", lambda m: "=" * len(m.group(1)) + " ", stashed, flags=re.MULTILINE)
-    
+    stashed = re.sub(
+        r"^(#{1,6})\s+",
+        lambda m: "=" * len(m.group(1)) + " ",
+        stashed,
+        flags=re.MULTILINE,
+    )
+
     # Convert Markdown unordered lists (asterisks) to Typst hyphens
     stashed = re.sub(r"^(\s*)\*\s+", r"\1- ", stashed, flags=re.MULTILINE)
     # -----------------------------------------------------------
@@ -357,25 +388,34 @@ def typst_body(text: str, workdir: Path) -> str:
         p = p.strip()
         if not p:
             continue
-        
+
         # --- NEW: Handle Markdown blockquotes ---
         is_blockquote = False
         if p.startswith(">"):
-            lines = p.split('\n')
+            lines = p.split("\n")
             # If all lines in this paragraph start with a blockquote marker
-            if all(line.lstrip().startswith('>') for line in lines):
+            if all(line.lstrip().startswith(">") for line in lines):
                 is_blockquote = True
-                p = '\n'.join(line.lstrip()[1:].strip() for line in lines)
+                p = "\n".join(line.lstrip()[1:].strip() for line in lines)
         # ----------------------------------------
-        
+
         # 1. Safely escape everything outside of the stashed markers
         rendered = typst_escape(p)
 
-        def expand_cb(mm: re.Match) -> str: return _render_code_block(blocks[int(mm.group(1))])
-        def expand_ic(mm: re.Match) -> str: return inline_code_bits[int(mm.group(1))]
-        def expand_img(mm: re.Match) -> str: return img_bits[int(mm.group(1))]
-        def expand_math(mm: re.Match) -> str: return math_bits[int(mm.group(1))]
-        def expand_lnk(mm: re.Match) -> str: return lnk_bits[int(mm.group(1))]
+        def expand_cb(mm: re.Match) -> str:
+            return _render_code_block(blocks[int(mm.group(1))])
+
+        def expand_ic(mm: re.Match) -> str:
+            return inline_code_bits[int(mm.group(1))]
+
+        def expand_img(mm: re.Match) -> str:
+            return img_bits[int(mm.group(1))]
+
+        def expand_math(mm: re.Match) -> str:
+            return math_bits[int(mm.group(1))]
+
+        def expand_lnk(mm: re.Match) -> str:
+            return lnk_bits[int(mm.group(1))]
 
         # 2. Expand all isolated blocks back into the text stream
         while True:
@@ -385,12 +425,12 @@ def typst_body(text: str, workdir: Path) -> str:
             rendered = re.sub(r"\x00IMG(\d+)\x00", expand_img, rendered)
             rendered = re.sub(r"\x00MB(\d+)\x00", expand_math, rendered)
             rendered = re.sub(r"\x00LNK(\d+)\x00", expand_lnk, rendered)
-            
+
             rendered = rendered.replace("\x00BSTART\x00", "#strong[")
             rendered = rendered.replace("\x00BEND\x00", "]/**/")
             rendered = rendered.replace("\x00ISTART\x00", "#emph[")
             rendered = rendered.replace("\x00IEND\x00", "]/**/")
-            
+
             if old == rendered:
                 break
 
@@ -433,7 +473,9 @@ def build_pdf(
 
     env = _env(tpl_dir, workdir)
     tpl = env.get_template("template.typ.j2")
-    typst_source = tpl.render(date=date, articles=articles, decorations=decorations or {})
+    typst_source = tpl.render(
+        date=date, articles=articles, decorations=decorations or {}
+    )
 
     typst_path = workdir / f"{date}.typ"
     typst_path.write_text(typst_source, encoding="utf-8")
@@ -441,19 +483,20 @@ def build_pdf(
     pdf_dst = out_dir / f"{date}.pdf"
 
     import typst
+
     try:
         typst.compile(str(typst_path), output=str(pdf_dst))
     except typst.TypstError as e:
-        sys.stderr.write(f"\n" + "="*70 + "\n")
+        sys.stderr.write(f"\n" + "=" * 70 + "\n")
         sys.stderr.write(f"[FATAL] TYPST COMPILATION FAILED\n")
-        sys.stderr.write(f"="*70 + "\n")
+        sys.stderr.write(f"=" * 70 + "\n")
         sys.stderr.write(f"Error Message: {e}\n\n")
-        
-        lines = typst_source.split('\n')
-        line_match = re.search(r'line (\d+)', str(e), re.IGNORECASE)
+
+        lines = typst_source.split("\n")
+        line_match = re.search(r"line (\d+)", str(e), re.IGNORECASE)
         if not line_match:
-            line_match = re.search(r':(\d+):\d+', str(e))
-            
+            line_match = re.search(r":(\d+):\d+", str(e))
+
         if line_match:
             err_line = int(line_match.group(1))
             sys.stderr.write(f"[Context around line {err_line}]:\n")
@@ -465,15 +508,21 @@ def build_pdf(
         else:
             # If Typst drops the line number, generate a numbered debug file
             debug_path = workdir / f"{date}_DEBUG_NUMBERED.txt"
-            with open(debug_path, 'w', encoding="utf-8") as f:
+            with open(debug_path, "w", encoding="utf-8") as f:
                 for i, line in enumerate(lines):
                     f.write(f"{i + 1:04d} | {line}\n")
-            
-            sys.stderr.write("[Context] Typst did not provide a specific line number.\n")
-            sys.stderr.write("(This usually means a layout rule was violated, like pagebreaks inside columns).\n\n")
-            sys.stderr.write(f"--> I have generated a numbered source file for you to inspect here:\n")
+
+            sys.stderr.write(
+                "[Context] Typst did not provide a specific line number.\n"
+            )
+            sys.stderr.write(
+                "(This usually means a layout rule was violated, like pagebreaks inside columns).\n\n"
+            )
+            sys.stderr.write(
+                f"--> I have generated a numbered source file for you to inspect here:\n"
+            )
             sys.stderr.write(f"--> {debug_path}\n")
 
-        sys.stderr.write(f"="*70 + "\n")
+        sys.stderr.write(f"=" * 70 + "\n")
 
     return pdf_dst

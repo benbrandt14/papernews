@@ -1,4 +1,5 @@
 """Render page 1 of a PDF as a PNG (cover preview for the landing page)."""
+
 from __future__ import annotations
 
 import shutil
@@ -16,8 +17,12 @@ def render_cover_png(pdf: Path, out_png: Path, dpi: int = 180) -> Path:
     result = subprocess.run(
         [
             "pdftoppm",
-            "-f", "1", "-l", "1",
-            "-r", str(dpi),
+            "-f",
+            "1",
+            "-l",
+            "1",
+            "-r",
+            str(dpi),
             "-png",
             str(pdf),
             prefix,
