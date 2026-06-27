@@ -12,3 +12,6 @@ state.db
 .DS_Store
 data/
 .env
+output/
+*.pdf
+*.db
