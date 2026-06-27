@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .extract import extract
 from .fetch import fetch_hn, fetch_rss, fetch_wikipedia_events
+from .models import ArticleChunk
 from .render import build_pdf
 from .store import Store
 from .wiki import (
@@ -335,8 +336,8 @@ def _gather_decorations() -> dict:
 
 def _collect_current_edition(
     store: Store, sources: list[dict], prefs: dict, cat_limits: dict
-) -> list[dict]:
-    out: list[dict] = []
+) -> list[ArticleChunk]:
+    out: list[ArticleChunk] = []
 
     categories = []
     for src in sources:
@@ -351,16 +352,16 @@ def _collect_current_edition(
         rows = store.latest_per_category(cat, limit)
         for r in rows:
             out.append(
-                {
-                    "url_hash": r["url_hash"],
-                    "source": r["source"],
-                    "category": r["category"],
-                    "url": r["url"],
-                    "title": r["title"],
-                    "text": r["body"] if r["body"] else r["text"],
-                    "summary": r["summary"],
-                    "date": _format_date(r["published"] or r["surfaced"]),
-                }
+                ArticleChunk(
+                    url_hash=r["url_hash"],
+                    source=r["source"],
+                    category=r["category"],
+                    url=r["url"],
+                    title=r["title"],
+                    body_markdown=r["body"] if r["body"] else r["text"],
+                    summary=r["summary"],
+                    date=_format_date(r["published"] or r["surfaced"]),
+                )
             )
     return out
 
@@ -390,7 +391,7 @@ def cmd_render(
         pdf.replace(constant_pdf)
         pdf = constant_pdf
 
-    hashes = [a["url_hash"] for a in articles]
+    hashes = [a.url_hash for a in articles]
     store.mark_rendered(hashes, date)
 
     print(str(pdf))

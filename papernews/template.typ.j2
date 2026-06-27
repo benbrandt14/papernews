@@ -171,20 +171,20 @@
   ((* endif *))
 
   // Print the Source inside the body, since the Category is now the major section header
-  #sourcelabel([((( art.category | typst )))]) #sym.dot.c #text(size: 9pt, weight: "bold", fill: luma(30%))[((( art.source | typst )))]((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")[((( art.date | typst )))]((* endif *)) #h(1fr) #text(size: 8pt, fill: luma(50%))[((( art.tokens ))) tokens / ((( art.cost )))¢]
+  #sourcelabel([((( art.category | typst )))]) #sym.dot.c #text(size: 9pt, weight: "bold", fill: luma(30%))[((( art.source | typst )))]((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")[((( art.date | typst )))]((* endif *)) #h(1fr) #text(size: 8pt, fill: luma(50%))[((( art.telemetry.formatted_tokens ))) tokens / ((( art.telemetry.formatted_cost )))¢]
   #articletitle("((( art.url | typst_url )))", [((( art.title | typst )))]) <art((( loop.index )))>
   #articlelede([((( art.summary | typst )))])
 
-  ((* if art.text | length > 2000 *))
+  ((* if art.body_markdown | length > 2000 *))
     #columns(2, gutter: 1.5em)[
-      ((( art.text | typst_body )))
+      ((( art.body_markdown | typst_body )))
     ]
   ((* else *))
-    ((( art.text | typst_body )))
+    ((( art.body_markdown | typst_body )))
   ((* endif *))
 
   // Force long articles to break to a new page so the next article starts fresh
-  ((* if art.text | length > 3000 *))
+  ((* if art.body_markdown | length > 3000 *))
     #pagebreak(weak: true)
   ((* endif *))
 ((* endfor *))
