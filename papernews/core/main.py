@@ -209,30 +209,6 @@ def stage3_hybrid_construction(
     return processed_chunks, total_run_telemetry
 
 
-@task(name="Stage 4A: Legacy Adapter")
-def stage4_legacy_adapter(chunks: List[ArticleChunk]) -> List[dict]:
-    legacy_articles = []
-    fallback_today_str = date.today().strftime("%b %d, %Y")
-
-    for chunk in chunks:
-        display_date = chunk.relative_time or chunk.published_date or fallback_today_str
-
-        article_dict = {
-            "category": chunk.category,
-            "source": chunk.source,
-            "title": chunk.title,
-            "url": chunk.url,
-            "summary": chunk.summary,  # Pass straight through
-            "date": display_date,
-            "tokens": chunk.telemetry.formatted_tokens,
-            "cost": chunk.telemetry.formatted_cost,
-            "text": chunk.body_markdown,  # Pass straight through
-        }
-        legacy_articles.append(article_dict)
-
-    return legacy_articles
-
-
 @task(name="Stage 4B: Template Decorations")
 def stage4b_fetch_decorations(source_config: dict) -> dict:
     pm = pluggy.PluginManager("papernews")
@@ -258,7 +234,7 @@ def stage4b_fetch_decorations(source_config: dict) -> dict:
 
 @task(name="Stage 5: Bespoke Renderer")
 def stage5_bespoke_render(
-    legacy_articles: List[dict], total_telemetry: Telemetry, decorations
+    articles: List[ArticleChunk], total_telemetry: Telemetry, decorations
 ) -> Path:
     out_dir = Path(os.getcwd()) / "output"
     out_dir.mkdir(exist_ok=True)
@@ -281,7 +257,7 @@ def stage5_bespoke_render(
 
     pdf_path = build_pdf(
         date=today_str,
-        articles=legacy_articles,
+        articles=articles,
         out_dir=out_dir,
         decorations=decorations,
     )
@@ -302,10 +278,9 @@ def run_papernews(source_config: dict):
 
     article_chunks, total_telemetry = stage3_hybrid_construction(budgeted, prefs)
 
-    legacy_articles = stage4_legacy_adapter(article_chunks)
     decorations = stage4b_fetch_decorations(source_config)
     
-    pdf_path = stage5_bespoke_render(legacy_articles, total_telemetry, decorations)
+    pdf_path = stage5_bespoke_render(article_chunks, total_telemetry, decorations)
 
     return pdf_path
 
