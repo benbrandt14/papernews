@@ -1,333 +1,63 @@
 # papernews
 
-![papernews on a Boox Note, next to a cup of coffee](assets/hero.jpg)
+An offline-first, highly customized E-Ink daily digest. A Prefect pipeline pulls feeds via plugins, uses an LLM filter, summarize, and format full text, and passes it through an adapter to render one consistently typeset Typst PDF using jinja.
 
-Every news site looks different. Hacker News, MacRumors, Quanta, my
-favourite ML blog, my favourite math blog — each one its own layout, fonts,
-colors, ads. To read anything I had to wade through somebody's design
-choices first and focus past the visual noise.
+## Pipeline Stages
 
-I much prefer reading the way an academic paper or an old magazine looks: quiet
-typography, generous margins, no color, nothing competing for attention.
+1. **Stage 1: Ingestion** — Dynamically loads plugins (RSS, Hacker News, Wiki). Outputs strict Pydantic `RawDocument` models.
+2. **Stage 2: Filtering** — Enforces deterministic category limits, local ranking heuristics, and regex blacklists natively in Python (zero API cost).
+3. **Stage 3: LLM Handling** — Routes surviving documents to the Gemini API for gatekeeper selection, summarization, and strict markdown formatting. Enforces Pydantic schema validation and tracks token `Telemetry`.
+4. **Stage 4: Templating** — Converts Pydantic objects into the dictionaries required by the legacy templating engine, keeping layout logic strictly decoupled.
+5. **Stage 5: Render** — Jinja injects the adapted data into a Typst template (`template.typ.j2`), utilizing a regex pipeline (`_stash_typography`) to safely compile LaTeX math, markdown headers, and remote images.
 
-**papernews** is the fix. A script pulls all those feeds, has Gemini clean
-up, translate to English, and rewrite the article bodies — the **full
-text**, not just summaries — and renders the result into one consistently
-typeset Typst PDF. Every article is *in* the PDF; you read entirely
-offline, no clicking through, no opening tabs.
+## Configuration (`sources.toml`)
 
-A side benefit I didn't expect to like but very much do: one place to read
-the day's news instead of five tabs being refreshed all day. One or two
-issues per day, no more.
+Manage your feeds and categories in `sources.toml`. Order matters: sources appear in this sequence in the generated PDF.
 
-Designed for an e-ink reader like the Boox Note, but it works just as well
-in any browser's PDF viewer.
+```toml
+[[sources]]
+name = "Hacker News Top"
+url = "" # Handled internally by the plugin
+kind = "hn"
+category = "Technology"
+limit = 5
 
-**👉 [See `sample-2026-06-04.pdf` for a real day's output.](sample-2026-06-04.pdf)**
+[[sources]]
+name = "Quanta Magazine"
+url = "[https://api.quantamagazine.org/feed/](https://api.quantamagazine.org/feed/)"
+kind = "rss"
+category = "Science"
 
-## Status
+```
 
-Hobby project; works. Things will move. Expect rough edges.
+## Plugins & Hacker News (HN) Fetching
 
-## How to use
+Ingestion is decoupled via `pluggy`.
 
-You need: a machine that can run Docker (your laptop, a NAS, a $5/mo VPS,
-anything), an LLM backend (Gemini API key **or** a local
-[Ollama](https://ollama.com) instance), and ~2 GB of disk for the image.
+* **RSS Plugin:** Uses `feedparser` and `trafilatura` to extract full-text bodies and images.
+* **HN Plugin:** Bypasses standard web scraping and queries the official Algolia Search API (`kind = "hn"`). It pulls the top articles by points within a specific time window to guarantee high-quality curation.
+* **Extensibility:** To add a new source (e.g., Academic PDFs), write a new `pluggy` module yielding `RawDocument` objects. As long as it respects the extraction parameters, the pipeline handles the rest.
+
+## Docker & API Structure
+
+**Prerequisites:** Docker and a Gemini API key.
 
 ```bash
-# 1) Pull
-git clone https://github.com/marcj/papernews
+git clone [https://github.com/benbrandt14/papernews](https://github.com/benbrandt14/papernews)
 cd papernews
-
-# 2) Configure
 cp .env.example .env
-$EDITOR .env             # paste GEMINI_API_KEY=AIzaSy... (or set LLM_BACKEND=ollama)
-
-# 3) Pick your sources
-$EDITOR sources.toml     # add/remove RSS/HN entries, set per-source limits
-
-# 4) (Optional) Tweak the look
-$EDITOR papernews/template.typ.j2
-
-# 5) Build + run
+# Edit .env and add your GEMINI_API_KEY
 docker compose up --build -d
 
-# Open http://localhost:8000
-# First PDF builds on demand and is cached. Background ingest runs every 4h.
 ```
 
-Everything you'd normally want to change is in **two files**:
+**API Interaction:**
+The application exposes a web server at `http://localhost:8000`.
 
-- **`sources.toml`** — which feeds, how many items per feed, in what order.
-  Two source kinds today: `kind = "hn"` (Hacker News, top-by-points via the
-  Algolia API) and `kind = "rss"` (any Atom/RSS feed via feedparser).
-- **`papernews/template.typ.j2`** — the Typst template. Page size, fonts,
-  colors, layout, what goes on the cover, everything. Edit, restart the
-  container, refresh `/digest.pdf`.
+* To trigger a new compilation pipeline run, send a request to the `/ingest` endpoint.
+* State (SQLite) and PDF outputs live in `./data/state.db` and `./output/` (bind-mounted from the host).
+* **Resetting State:** To perform a hard reset, simply delete `data/state.db` and restart the container. The database schema will automatically rebuild on boot.
 
-Optional but useful:
-
-- **`papernews/summarize.py`** + **`papernews/rewrite.py`** — the LLM
-  system prompts. When using Gemini, change `GEMINI_MODEL` to
-  `gemini-2.5-pro` for fancier rewrites at ~10× the cost; adjust
-  `_SYSTEM` to change the editorial voice (e.g. disable the
-  auto-translate-to-English rule).
-- **`papernews/wiki.py`** — what goes into the World news block and the
-  Quote-of-the-day source.
-
-### Getting the PDF onto a Boox Note
-
-A few different ways, no special script needed:
-
-- **Manual** — open `http://your-machine:8000/digest.pdf` in a browser on
-  your phone/laptop and upload it to your Boox Note from there (drag-and-
-  drop via Syncthing, Dropsync, or a generic cloud drive).
-- **Syncthing / Dropsync** — Setup a background sync tool to automatically
-  pull the PDF to your device. Pair once, then:
-  ```bash
-  # on your server
-  curl -s http://your-machine:8000/digest.pdf -o /path/to/sync/folder/today.pdf
-  ```
-  Stick that two-liner in cron on the host and the device picks it up on
-  next sync automatically.
-
-No native push is built-in because everyone's setup is different and you
-probably don't want me poking your Android device with your token.
-
-## Quick start
-
-```bash
-git clone https://github.com/yourname/papernews
-cd papernews
-cp .env.example .env
-# paste your GEMINI_API_KEY into .env (get one at
-# https://aistudio.google.com/settings/keys)
-docker compose up --build
-```
-
-Then visit `http://localhost:8000` — landing page with a preview image and a
-link to `/digest.pdf`. The first PDF builds on demand, takes ~1–2 minutes the
-first time and is then cached until new content arrives.
-
-State lives in `./data/state.db` (bind-mounted from the host) so it survives
-container restarts.
-
-## LLM backends
-
-papernews routes all LLM calls through `papernews/llm.py`. Switch backends
-with the `LLM_BACKEND` env var.
-
-### Gemini (default)
-
-```bash
-# .env
-LLM_BACKEND=gemini
-GEMINI_API_KEY=AIzaSy...
-```
-
-Uses `gemini-2.5-flash` by default. Override with `GEMINI_MODEL=gemini-2.5-pro`
-for higher quality at ~10× the cost.
-
-### Ollama (local)
-
-Run any model locally — no API key, no per-token cost, nothing leaves your
-machine.
-
-```bash
-# .env
-LLM_BACKEND=ollama
-OLLAMA_HOST=http://your-ollama-host:11434   # default: http://localhost:11434
-OLLAMA_MODEL=qwen2.5:3b                    # default: mistral
-OLLAMA_TIMEOUT=1800                        # seconds; increase for slow hardware
-PAPERNEWS_WORKERS=1                        # set to 1 for CPU inference
-```
-
-**Model recommendations:** The rewrite step is token-heavy — aim for a model
-that balances speed and quality for your hardware.
-
-| Model | VRAM | Notes |
-|-------|------|-------|
-| `qwen2.5:3b` | ~2 GB | Fast, fits on most GPUs |
-| `mistral:7b` | ~5 GB | Better quality, needs a discrete GPU |
-| `qwen2.5:7b` | ~5 GB | Good quality/speed balance |
-
-CPU inference works but is slow. A discrete GPU with ROCm (AMD) or CUDA
-(NVIDIA) support makes a significant difference. Set `PAPERNEWS_WORKERS=1`
-when running on CPU to avoid hammering Ollama with concurrent requests.
-
-## What it produces
-
-A 100–200 page PDF with:
-
-- **Cover page**: title + date + article count, quote of the day from
-  Wikiquote, a "World news" block (5 tech headlines + 2 Western items from
-  Wikipedia's Current Events portal, each compressed to a single sentence).
-- **Contents**: every article grouped by source, with dot-leaders to its
-  publication date.
-- **"Did you know…"** trivia nuggets from Wikipedia's Main Page.
-- **The articles themselves**, set in two-column Latin Modern with proper
-  paragraph indents, hyphenation, microtypography. Math (`$x = y$`,
-  `$$\int f$$`, `\(...\)`, `\[...\]`) is rendered as real Typst math. Code
-  blocks (fenced or inline) come through in monospace.
-- All non-English source content (heise, etc.) is translated to English
-  during the rewrite step. You can disable that in the prompt if you don't
-  want it.
-
-### Cover page
-
-[📄 See the full sample PDF →](papernews.pdf)
-
-[![Cover page: title, quote of the day, world news, table of contents](assets/cover.png)](papernews.pdf)
-
-### Article body
-
-[📄 See the full sample PDF →](papernews.pdf)
-
-[![A typical two-column article page, set in Latin Modern](assets/article.png)](papernews.pdf)
-
-## Architecture
-
-```
-                   sources.toml
-                       │
-            ┌──────────┴──────────┐
-            │                     │
-            ▼                     ▼
-       ┌────────┐            ┌────────┐
-       │ gather │            │ wiki/  │
-       │  HN +  │            │ news + │
-       │  RSS   │            │  QOTD  │
-       └───┬────┘            └───┬────┘
-           ▼                     │
-       ┌────────┐                │
-       │extract │                │
-       │ (traf- │                │
-       │  ilatura)               │
-       └───┬────┘                │
-           ▼                     │
-       ┌─────────┐               │
-       │summarize│ ─── LLM       │
-       └───┬─────┘               │
-           ▼                     │
-       ┌─────────┐               │
-       │ rewrite │ ─── LLM       │
-       └───┬─────┘               │
-           ▼                     ▼
-       SQLite store (state.db)   in-memory
-           │                     │
-           └──────────┬──────────┘
-                     ▼
-              ┌──────────┐
-              │  render  │ ── typst
-              └────┬─────┘
-                   ▼
-             archive/cache/<hash>.pdf
-```
-
-Four stages, each idempotent and resumable:
-
-1. **gather** — pulls new items from each source, runs `trafilatura` to
-   extract the article body, stores the raw text. Pure I/O — no LLM cost.
-2. **summarize** — batches up to 8 articles per LLM call and produces a
-   ≤40-word two-sentence summary for each (used as the lede in the front
-   matter and in the contents listing).
-3. **rewrite** — batches up to 8 articles per LLM call and produces a
-   clean, properly-paragraphed, translated-to-English version of each
-   article body for the renderer. Preserves code fences and `$math$` exactly.
-4. **render** — pulls the latest N articles per source from the store,
-   plus fresh world news + quote + DYK, and runs them through a Jinja
-   template into Typst → PDF. Results are cached by a hash of "what's in
-   the store" + "what's in sources.toml". Same content + same config → same
-   cached PDF served instantly.
-
-A background `APScheduler` job runs steps 1–3 every 4 hours (configurable).
-The render step is on-demand; the first hit to `/digest.pdf` after an ingest
-builds the PDF and caches it.
-
-## HTTP endpoints
-
-| route          | what it does                                            |
-|----------------|---------------------------------------------------------|
-| `GET /`        | minimal landing page, cover preview + Read PDF link     |
-| `GET /digest.pdf` | the current edition (built on demand, then cached)   |
-| `GET /preview.png` | page 1 rasterized at 180 DPI                        |
-| `GET /sources` | JSON list of configured sources + latest `fetched_at`   |
-| `GET /healthz` | liveness probe (returns `ok`)                           |
-| `POST /ingest` | manual kick of the gather → summarize → rewrite cycle   |
-
-## Configuring sources
-
-Sources live in [`sources.toml`](sources.toml) — that's the exact file used
-to produce [the sample PDF](sample-2026-06-04.pdf). Open it, copy a block,
-edit, restart the container, refresh `/digest.pdf`.
-
-The order of `[[source]]` blocks in the file is the order they'll appear in
-the PDF — sources at the top come first. World news, quote of the day, and
-the "Did you know…" nuggets are not configured here — they're cover
-decorations, fetched fresh on every render.
-
-### `kind = "hn"` — Hacker News via the Algolia search API
-
-Ranks stories by points within a time window. No URL needed; the API is
-hardcoded.
-
-| field          | type | default | meaning |
-|----------------|------|---------|---------|
-| `name`         | string | required | display label (also the contents-page heading) |
-| `kind`         | string | required | must be `"hn"` |
-| `limit`        | int  | `10`     | how many top stories to keep |
-| `since_hours`  | int  | `48`     | only consider stories submitted in the last N hours |
-| `min_points`   | int  | `50`     | story must have at least this many points to qualify |
-
-```toml
-[[source]]
-name        = "Hacker News"
-kind        = "hn"
-limit       = 10
-since_hours = 48
-min_points  = 100
-```
-
-### `kind = "rss"` — any Atom/RSS feed
-
-Parsed with [feedparser](https://feedparser.readthedocs.io/), so it accepts
-RSS 0.9/1.0/2.0 and Atom 1.0 — every blog and most news sites work.
-
-| field   | type   | default  | meaning |
-|---------|--------|----------|---------|
-| `name`  | string | required | display label (also the contents-page heading) |
-| `kind`  | string | required | must be `"rss"` |
-| `url`   | string | required | feed URL |
-| `limit` | int    | `20`     | take at most N most-recent items |
-
-```toml
-[[source]]
-name  = "Quanta Magazine"
-kind  = "rss"
-url   = "https://www.quantamagazine.org/feed/"
-limit = 8
-```
-
-### Per-source ordering and limits in practice
-
-The `limit` is applied **twice**, on purpose:
-
-- At **fetch** time: gather doesn't pull more than `limit` items from the
-  feed (saves bandwidth and trafilatura time).
-- At **render** time: even if the store accumulates more than `limit` items
-  for a source across multiple ingests (it will — items don't get deleted),
-  only the latest `limit` per source make it into a given PDF.
-
-So if you want Quanta to have at most 8 articles in the issue, regardless of
-how many they've published this week → set `limit = 8`. If you want Hacker
-News to show only the top 5 by points in the last 24h → set `limit = 5,
-since_hours = 24`.
-
-> **On the totals.** Adding up every `limit` in `sources.toml` gives you the
-> maximum article count per issue. Aim for **30–60 articles** for a
-> comfortable 30–60 minute read. Gemini's summaries are dense; volume isn't
-> quality. An empty section on a slow day is cleaner than padding.
 
 ## Scheduling ingests
 
@@ -405,32 +135,9 @@ The same pattern works for Kindle (`scp` over USB networking), a network
 printer (`lp -d papernews "$PDF"`), an email (`mutt -a "$PDF"`), or
 anything else you can script.
 
-## Tests
-
-Modest, no-network unittest suite for the web/scheduling/hook behaviour:
-
-```bash
-python -m unittest discover -s tests
-```
-
 ## Local development
 
-You don't have to use Docker — the CLI works directly:
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install -e .
-export GEMINI_API_KEY=AIzaSy...   # or: export LLM_BACKEND=ollama OLLAMA_HOST=...
-
-.venv/bin/python -m papernews gather       # fetch + extract
-.venv/bin/python -m papernews summarize    # LLM pass 1 (batched)
-.venv/bin/python -m papernews rewrite      # LLM pass 2 (batched)
-.venv/bin/python -m papernews render       # Typst → PDF
-# or all of the above in sequence:
-.venv/bin/python -m papernews build
-```
-
-Requirements: Python 3.11+, `typst`, `pdftoppm` (poppler).
+TODO add more content here.
 
 ## Customizing the typography
 
@@ -447,71 +154,10 @@ Everything visual lives in one file: [`papernews/template.typ.j2`](papernews/tem
 Customize whatever you like — the Jinja delimiters are Typst-safe
 (`((* ... *))` for blocks, `((( ... )))` for variables) so your `#`, `{`, and `}` don't fight each other.
 
-## Cost
-
-**With Ollama:** free — all inference runs locally.
-
-**With Gemini (Gemini 2.5 Flash, default):** roughly per ingest cycle
-with ~50 articles:
-
-- Summarize: 6 batched calls (~8 articles each)
-- Rewrite: 6 batched calls
-- World-news compress: 1 call
-
-Order-of-magnitude: a few cents to a few tens of cents per cycle depending on
-article lengths. At 6 cycles/day that's well under $1/day. Going to Sonnet or
-Opus multiplies the bill ~10–30×.
-
-Set a spend cap at
-https://aistudio.google.com/settings/billing → Spend limits — the run-loop
-can't surprise you above whatever you set.
-
-## Privacy
-
-- All data lives on your machine (`./data/state.db` + `./data/archive/cache/`).
-- With `LLM_BACKEND=gemini`: article text is sent to the Gemini API
-  for summarization and rewriting. That's the only outbound destination for
-  content (besides fetching the feeds themselves).
-- With `LLM_BACKEND=ollama`: nothing leaves your machine. All inference
-  runs locally.
-- No analytics, no telemetry, no third-party scripts in the landing page.
-
-## Project layout
-
-```
-papernews/
-├── papernews/
-│   ├── fetch.py          # HN Algolia + RSS feedparser
-│   ├── extract.py        # trafilatura
-│   ├── llm.py            # LLM backend router (Gemini or Ollama)
-│   ├── summarize.py      # summarization prompts + batching
-│   ├── rewrite.py        # rewrite prompts + batching
-│   ├── wiki.py           # World news / Quote / DYK / tech feeds
-│   ├── store.py          # SQLite article store + queries
-│   ├── render.py         # Jinja + Typst
-│   ├── preview.py        # PDF → PNG via pdftoppm
-│   ├── cache.py          # On-disk cache by content hash
-│   ├── cli.py            # papernews command
-│   ├── web.py            # Flask + APScheduler
-│   └── template.typ.j2   # the magazine
-├── sources.toml          # configured feeds
-├── pyproject.toml
-├── Dockerfile
-├── docker-compose.yml
-└── data/                 # gitignored — your SQLite + cached PDFs
-```
-
 ## Contributing
 
-Open an issue first if you're planning something non-trivial — happy to talk
-about direction. The codebase is small enough that you can read it end to
-end in an hour.
+Go contribute to the real thing (https://github.com/marcj/papernews), this is a fork so I'm not polluting the original with vibe-coded nonesense.
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
-
-## Why "papernews"
-
-Working name; happy to take suggestions. The vibe is: an old-fashioned daily
-paper, not a feed. You read it once, then you put it down.
