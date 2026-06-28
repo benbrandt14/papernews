@@ -48,7 +48,7 @@ from .cli import (
 )
 from .preview import render_cover_png
 from .render import build_pdf
-from .store import Store
+from .store import SimpleStore as Store
 
 
 # --- Config helpers -------------------------------------------------------
