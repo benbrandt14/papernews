@@ -10,6 +10,7 @@ from pathlib import Path
 
 import jinja2
 from PIL import Image
+from .models import ArticleChunk
 
 _TYPST_REPLACE = {
     "\\": r"\\",
@@ -463,7 +464,7 @@ def _env(tpl_dir: Path, workdir: Path) -> jinja2.Environment:
 
 def build_pdf(
     date: str,
-    articles: list[dict],
+    articles: list[ArticleChunk],
     out_dir: Path,
     decorations: dict | None = None,
 ) -> Path:

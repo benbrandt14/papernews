@@ -74,13 +74,15 @@ class FrontpageDecorations(BaseModel):
 
 
 class ArticleChunk(BaseModel):
-    content_type: Literal["rss", "academic_pdf", "wiki_event", "wiki_quote"]
+    content_type: Literal["rss", "academic_pdf", "wiki_event", "wiki_quote"] = "rss"
     category: str
     source: str
     title: str
     summary: str
     body_markdown: str
     url: str
+    url_hash: str = ""
+    date: str = ""
     published_date: str = ""
     relative_time: str = ""
     telemetry: Telemetry = Field(default_factory=Telemetry)
