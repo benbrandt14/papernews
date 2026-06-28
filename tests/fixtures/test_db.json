@@ -1,0 +1,12 @@
+[
+  {
+    "description": "Ensure long continuous words do not break formatting",
+    "input": "ThisIsAVeryLongWordThatShouldNotBreakTheFormattingEngineOrFail",
+    "expected_typst": "ThisIsAVeryLongWordThatShouldNotBreakTheFormattingEngineOrFail"
+  },
+  {
+    "description": "Ensure unbalanced brackets fallback gracefully",
+    "input": "This is an [ unbalanced bracket string",
+    "expected_typst": "This is an \\[ unbalanced bracket string"
+  }
+]

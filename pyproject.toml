@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Daily news aggregator → Typst PDF digest"
 requires-python = ">=3.11"
 dependencies = [
+    "pytest",
+    "pytest-mock",
     "requests>=2.31",
     "feedparser>=6.0",
     "trafilatura>=1.12",

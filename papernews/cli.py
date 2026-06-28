@@ -12,7 +12,7 @@ from .extract import extract
 from .fetch import fetch_hn, fetch_rss, fetch_wikipedia_events
 from .models import ArticleChunk
 from .render import build_pdf
-from .store import Store
+from .store import SimpleStore as Store
 from .wiki import (
     fetch_did_you_know,
     fetch_quote_of_day,
