@@ -1,7 +1,8 @@
 import pytest
 from pathlib import Path
 import re
-from papernews.render import typst_body, _stash_math
+from hypothesis import given, strategies as st
+from papernews.render import typst_body, _stash_math, typst_escape, typst_url, _TYPST_REPLACE
 
 def test_markdown_headers_to_typst():
     # Adding a leading paragraph so _strip_leading_metadata doesn't strip the first header
@@ -75,3 +76,58 @@ def test_regression_fixtures(tmp_path):
 
         # Verify the expected syntax is somewhere in the resulting Typst body
         assert expected_output in result, f"Regression Failed: {description}\nExpected: {expected_output}\nGot: {result}"
+
+@given(st.text())
+def test_typst_escape_property(text):
+    escaped = typst_escape(text)
+
+    # Verify no unescaped special characters exist in the output.
+    # Note: typst_escape unconditionally escapes # to \#, and uses _TYPST_REPLACE for others.
+    # We shouldn't find raw special chars unless they are part of an escape sequence.
+
+    # Reconstruct original text
+    reconstructed = escaped
+    # \# is handled specially in typst_escape
+    reconstructed = reconstructed.replace(r"\#", "#")
+    # For dictionary keys in _TYPST_REPLACE
+    # We must do it in the reverse order of string iteration, but actually simple un-replace
+    # for each mapped escape works if we're careful.
+    # The safest way to reconstruct is to iterate through the escaped string and unescape.
+
+    i = 0
+    actual_reconstructed = []
+    while i < len(escaped):
+        if escaped[i] == '\\' and i + 1 < len(escaped):
+            # Check if it's an escaped character
+            next_char = escaped[i+1]
+            if next_char == '#':
+                actual_reconstructed.append('#')
+                i += 2
+                continue
+
+            # Check if this combination exists as a value in _TYPST_REPLACE
+            found_escape = False
+            for k, v in _TYPST_REPLACE.items():
+                if v == "\\" + next_char:
+                    actual_reconstructed.append(k)
+                    i += 2
+                    found_escape = True
+                    break
+
+            if found_escape:
+                continue
+
+        actual_reconstructed.append(escaped[i])
+        i += 1
+
+    assert "".join(actual_reconstructed) == text
+
+@given(st.text())
+def test_typst_url_property(url):
+    escaped = typst_url(url)
+
+    # Reconstruct
+    # typst_url does: url.replace("\\", "\\\\").replace('"', '\\"')
+    reconstructed = escaped.replace('\\"', '"').replace("\\\\", "\\")
+
+    assert reconstructed == url
