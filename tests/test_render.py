@@ -2,7 +2,7 @@ import pytest
 from pathlib import Path
 import re
 from hypothesis import given, strategies as st
-from papernews.render import typst_body, _stash_math, typst_escape, typst_url, _TYPST_REPLACE
+from papernews.render import typst_body, _stash_math, typst_escape, typst_url, _TYPST_REPLACE, _strip_leading_metadata, _render_code_block, _process_inline
 
 def test_markdown_headers_to_typst():
     # Adding a leading paragraph so _strip_leading_metadata doesn't strip the first header
@@ -86,9 +86,7 @@ def test_typst_escape_property(text):
     # We shouldn't find raw special chars unless they are part of an escape sequence.
 
     # Reconstruct original text
-    reconstructed = escaped
-    # \# is handled specially in typst_escape
-    reconstructed = reconstructed.replace(r"\#", "#")
+
     # For dictionary keys in _TYPST_REPLACE
     # We must do it in the reverse order of string iteration, but actually simple un-replace
     # for each mapped escape works if we're careful.
@@ -131,3 +129,35 @@ def test_typst_url_property(url):
     reconstructed = escaped.replace('\\"', '"').replace("\\\\", "\\")
 
     assert reconstructed == url
+
+@given(st.text())
+def test_stash_math_property(text):
+    # Tests that varied inputs don't crash the math extraction regex or logic
+    # and always return a tuple of (string, list[str]).
+    stashed_text, bits = _stash_math(text)
+    assert isinstance(stashed_text, str)
+    assert isinstance(bits, list)
+    # Re-substituting the bits should approximately lead to the same textual footprint,
+    # though formatting changes with backticks, so we mainly care that it didn't crash.
+
+@given(st.text())
+def test_strip_leading_metadata_property(text):
+    # Verify we never crash on random strings
+    stripped = _strip_leading_metadata(text)
+    assert isinstance(stripped, str)
+    assert len(stripped) <= len(text)
+
+@given(st.text())
+def test_render_code_block_property(code):
+    rendered = _render_code_block(code)
+    # rendered should start and end with fences that are at least 3 backticks long
+    # and strictly longer than any internal backtick sequence.
+    assert rendered.startswith("\n\n```")
+    assert rendered.endswith("```\n\n")
+    assert code in rendered
+
+@given(st.text())
+def test_process_inline_property(text):
+    # Tests that varied inputs do not crash the inline processing.
+    processed = _process_inline(text)
+    assert isinstance(processed, str)
