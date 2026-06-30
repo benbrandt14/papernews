@@ -99,16 +99,13 @@ def test_e2e_gauntlet(mocker, tmp_path, monkeypatch):
         "dyk": []
     }
 
-    original_cwd = os.getcwd()
-    os.chdir(tmp_path)
-    try:
-        pdf_path = stage5_bespoke_render.fn(
-            articles=articles,
-            total_telemetry=telemetry,
-            decorations=decorations
-        )
-    finally:
-        os.chdir(original_cwd)
+    monkeypatch.chdir(tmp_path)
+
+    pdf_path = stage5_bespoke_render.fn(
+        articles=articles,
+        total_telemetry=telemetry,
+        decorations=decorations
+    )
 
     typst_path = tmp_path / "output" / ".build" / f"{date.today().strftime('%Y-%m-%d')}.typ"
     assert typst_path.exists()
@@ -173,7 +170,7 @@ def test_e2e_gauntlet(mocker, tmp_path, monkeypatch):
                 continue
 
             c = text[i]
-            if c in ('[', '('):
+            if c in ('[', '(', '{'):
                 stack.append(c)
             elif c == ']':
                 if not stack or stack.pop() != '[':
@@ -181,12 +178,15 @@ def test_e2e_gauntlet(mocker, tmp_path, monkeypatch):
             elif c == ')':
                 if not stack or stack.pop() != '(':
                     return False
+            elif c == '}':
+                if not stack or stack.pop() != '{':
+                    return False
 
             i += 1
 
         return len(stack) == 0
 
-    assert check_balanced_delimiters(content), "Found unbalanced [] or () in Typst output!"
+    assert check_balanced_delimiters(content), "Found unbalanced [], (), or {} in Typst output!"
 
     empty_blocks = re.findall(r'(?<!\))(?<!\[)\[\s*\]', content)
     assert len(empty_blocks) == 0, "Found empty trailing blocks []!"
