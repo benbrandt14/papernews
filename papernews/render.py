@@ -333,6 +333,9 @@ def typst_body(text: str, workdir: Path) -> str:
     if not text:
         return ""
 
+    # Prevent malicious injection of our internal marker tokens
+    text = text.replace("\x00", "")
+
     text = _strip_leading_metadata(text)
 
     blocks: list[str] = []
@@ -434,6 +437,12 @@ def typst_body(text: str, workdir: Path) -> str:
 
             if old == rendered:
                 break
+
+        # Clean up any trailing unmatched typography markers
+        # if the user input happened to maliciously contain \x00ISTART\x00 without \x00IEND\x00
+        # Though typst_escape will escape the input BEFORE we get here, these were originally
+        # inserted by regex so it should always be paired, but if the raw text literally contained
+        # \x00ISTART\x00 it would be replaced above unbalanced. Let's fix this by escaping null bytes in input.
 
         if is_blockquote:
             rendered = f"#quote(block: true)[\n{rendered}\n]"
