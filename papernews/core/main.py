@@ -78,6 +78,7 @@ def triage_process_a_filter(
 ) -> List[RawDocument]:
     filtered_docs = []
     blacklist = prefs.get("blacklist_words", [])
+    max_char_length = prefs.get("max_char_length", 20000)
 
     if blacklist:
         pattern = re.compile(
@@ -88,6 +89,9 @@ def triage_process_a_filter(
 
     for doc in documents:
         if len(doc.raw_text) < 800 and doc.content_type == "rss":
+            continue
+
+        if len(doc.raw_text) > max_char_length and doc.content_type != "academic_pdf":
             continue
 
         if pattern:
