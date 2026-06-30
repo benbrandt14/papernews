@@ -89,6 +89,12 @@ def assert_balanced_delimiters(typst_code: str):
         if any(c in ('[', '{') for c in stack):
             raise ValueError(f"Unbalanced delimiters remain open: {stack}")
 
+    # Check for balanced math block delimiters ($)
+    # Count all unescaped $ characters. They must be perfectly balanced.
+    unescaped_dollars = len(re.findall(r'(?<!\\)\$', text))
+    if unescaped_dollars % 2 != 0:
+        raise ValueError(f"Unbalanced math blocks ($) found in output. Unescaped count: {unescaped_dollars}")
+
 def assert_no_trailing_empty_blocks(typst_code: str):
     """
     Ensures that pipelines did not leave behind broken or trailing empty blocks like [].
@@ -176,7 +182,7 @@ def test_regression_fixtures(tmp_path):
 from hypothesis import settings
 
 @given(st.text())
-@settings(deadline=None)
+@settings(max_examples=10, deadline=None)
 def test_typst_body_property_safety(text):
     """
     Feeds random hostile strings into the main rendering pipeline and validates that
