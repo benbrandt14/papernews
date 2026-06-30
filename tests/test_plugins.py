@@ -104,4 +104,29 @@ def test_plugin_successful_ingestion(ingestion_plugin, mocker):
         assert "title" in doc.metadata
 
     mock_fetch.assert_called()
+
+    # CRITICAL REVISION: Enforce the architectural invariants for extraction
+    mock_extract.assert_called()
+    _, kwargs = mock_extract.call_args
+    assert kwargs.get("include_images") is True, f"Plugin '{mod.__name__}' failed to pass include_images=True to trafilatura"
+    assert kwargs.get("include_links") is True, f"Plugin '{mod.__name__}' failed to pass include_links=True to trafilatura"
+
+def test_plugin_extraction_failure(ingestion_plugin, mocker):
+    mod, kind = ingestion_plugin
+
+    # Mock successful network fetch but failed extraction
+    mock_fetch = mocker.patch("trafilatura.fetch_url", return_value="<html></html>")
+    mock_extract = mocker.patch("trafilatura.extract", return_value=None)
+
+    source_config = {
+        "source": [
+            {"kind": kind, "url": "http://fake.com", "category": "News", "limit": 2}
+        ]
+    }
+
+    docs = mod.fetch_sources(source_config)
+
+    assert isinstance(docs, list)
+    assert len(docs) == 0 # because extract failed, it should drop the article gracefully
+    mock_fetch.assert_called()
     mock_extract.assert_called()
