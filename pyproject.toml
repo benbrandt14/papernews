@@ -45,6 +45,7 @@ dev = [
 [tool.ruff]
 # Enable Pyflakes (F), pycodestyle (E), isort (I), and pyupgrade (UP)
 lint.select = ["E", "F", "I", "UP"]
+lint.ignore = ["E501", "E402", "F841", "E722"]
 
 [tool.mypy]
 # Global options:

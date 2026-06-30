@@ -53,11 +53,7 @@ def fetch_hn(
             h.get("url") or f"https://news.ycombinator.com/item?id={h.get('objectID')}"
         )
         ts = h.get("created_at_i")
-        surfaced = (
-            datetime.fromtimestamp(ts, tz=UTC).date().isoformat()
-            if ts
-            else None
-        )
+        surfaced = datetime.fromtimestamp(ts, tz=UTC).date().isoformat() if ts else None
         yield RawItem(source=source_name, url=url, title=title, surfaced=surfaced)
 
 

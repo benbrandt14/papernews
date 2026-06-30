@@ -38,7 +38,7 @@ class Telemetry(BaseModel):
     prompt_tokens: int = 0
     output_tokens: int = 0
 
-    def __add__(self, other: 'Telemetry') -> 'Telemetry':
+    def __add__(self, other: "Telemetry") -> "Telemetry":
         return Telemetry(
             prompt_tokens=self.prompt_tokens + other.prompt_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
