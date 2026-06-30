@@ -145,21 +145,25 @@ def test_budget_uses_default_limit():
     assert result[0].source_id == "1"
 
 def test_filter_drops_overly_long():
-    """
-    Simulates sending an overly long dummy document. Since there is currently no hard check
-    to drop this in the python logic (the LLM tokenizer is relied upon later), this test
-    asserts it currently passes through, highlighting the current state.
-    """
     func = getattr(triage_process_a_filter, "fn", triage_process_a_filter)
     doc = RawDocument(
         source_id="1",
         content_type="rss",
-        raw_text="A" * 150000,
+        raw_text="A" * 50000,
         metadata={"title": "Too Long Document"}
     )
-    result = func([doc], {})
-    # Currently, the application logic does not drop overly long documents in Stage 2A.
-    # It relies on the LLM token length check/truncation in Stage 3 instead.
+    result = func([doc], {"max_char_length": 20000})
+    assert len(result) == 0
+
+def test_filter_keeps_overly_long_academic():
+    func = getattr(triage_process_a_filter, "fn", triage_process_a_filter)
+    doc = RawDocument(
+        source_id="1",
+        content_type="academic_pdf",
+        raw_text="A" * 50000,
+        metadata={"title": "Long Academic Document"}
+    )
+    result = func([doc], {"max_char_length": 20000})
     assert len(result) == 1
 
 def test_filter_keeps_malformed():
