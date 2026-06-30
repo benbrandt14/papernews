@@ -31,6 +31,7 @@ _TYPST_REPLACE = {
 
 _STRICT_MATH_RE = re.compile(r"\$\$[^\$]+?\$\$|\$(?!\s)[^$\n]+?(?<!\s)\$")
 
+
 def typst_escape(s) -> str:
     if s is None:
         return ""
@@ -38,20 +39,23 @@ def typst_escape(s) -> str:
     out = []
     last_end = 0
     for m in _STRICT_MATH_RE.finditer(s):
-        prefix = s[last_end:m.start()]
-        prefix_escaped = "".join(_TYPST_REPLACE.get(c, c) for c in prefix).replace("#", r"\#")
+        prefix = s[last_end : m.start()]
+        prefix_escaped = "".join(_TYPST_REPLACE.get(c, c) for c in prefix).replace(
+            "#", r"\#"
+        )
         out.append(prefix_escaped)
 
         math_text = m.group(0)
         math_escaped = "".join(
-            _TYPST_REPLACE.get(c, c) if c != "$" else c
-            for c in math_text
+            _TYPST_REPLACE.get(c, c) if c != "$" else c for c in math_text
         ).replace("#", r"\#")
         out.append(math_escaped)
         last_end = m.end()
 
     suffix = s[last_end:]
-    suffix_escaped = "".join(_TYPST_REPLACE.get(c, c) for c in suffix).replace("#", r"\#")
+    suffix_escaped = "".join(_TYPST_REPLACE.get(c, c) for c in suffix).replace(
+        "#", r"\#"
+    )
     out.append(suffix_escaped)
 
     return "".join(out)
@@ -63,7 +67,9 @@ def typst_url(url: str) -> str:
     return url.replace("\\", "\\\\").replace('"', '\\"')
 
 
-_FENCE_RE = re.compile(r"^(`{3,})[a-zA-Z0-9_+\-]*\s*?\n(.*?)\n\1(?=\s|$)", re.DOTALL | re.MULTILINE)
+_FENCE_RE = re.compile(
+    r"^(`{3,})[a-zA-Z0-9_+\-]*\s*?\n(.*?)\n\1(?=\s|$)", re.DOTALL | re.MULTILINE
+)
 _INLINE_RE = re.compile(r"`([^`\n]+)`")
 
 _IMAGE_RE = re.compile(r"!\[([^\]]*)\]\((https?://[^\)]+)\)")
@@ -238,7 +244,7 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
 
                 cols = 2
                 grid_str = (
-                    f'grid(columns: {cols}, gutter: 6pt, {", ".join(grid_items)})'
+                    f"grid(columns: {cols}, gutter: 6pt, {', '.join(grid_items)})"
                 )
                 bits.append(f"#figure({grid_str}, placement: auto)/**/")
                 out_str += f"\x00IMG{len(bits) - 1}\x00"
@@ -366,7 +372,9 @@ def typst_body(text: str, workdir: Path) -> str:
     text = _strip_leading_metadata(text)
 
     # Strip invisible control characters (except standard whitespace)
-    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u200b\u200c\u200d\ufeff]', '', text)
+    text = re.sub(
+        r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u200b\u200c\u200d\ufeff]", "", text
+    )
 
     blocks: list[str] = []
 

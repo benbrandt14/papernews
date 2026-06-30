@@ -17,9 +17,10 @@ class Article:
 
 from trafilatura.settings import use_config
 
+
 def extract(url: str, title: str, source: str) -> Article | None:
     config = use_config()
-    config.set("DEFAULT", "MAX_FILE_SIZE", "5242880") # 5MB limit
+    config.set("DEFAULT", "MAX_FILE_SIZE", "5242880")  # 5MB limit
     config.set("DEFAULT", "TIMEOUT", "5")
 
     downloaded = trafilatura.fetch_url(url, config=config)
@@ -31,7 +32,7 @@ def extract(url: str, title: str, source: str) -> Article | None:
         include_tables=True,
         include_links=True,
         include_images=True,
-        favor_precision=True, # Prevent navigation cruft & short entries from being included
+        favor_precision=True,  # Prevent navigation cruft & short entries from being included
     )
     if not text or len(text) < 200:
         return None
