@@ -1,9 +1,10 @@
 # papernews/plugins/rss_plugin.py
-import pluggy
-import feedparser
-import trafilatura
 import logging
-from typing import List
+
+import feedparser
+import pluggy
+import trafilatura
+
 from papernews.models import RawDocument
 
 hookimpl = pluggy.HookimplMarker("papernews")
@@ -11,7 +12,7 @@ logging.getLogger("trafilatura").setLevel(logging.ERROR)
 
 
 @hookimpl
-def fetch_sources(source_config: dict) -> List[RawDocument]:
+def fetch_sources(source_config: dict) -> list[RawDocument]:
     documents = []
 
     # 1. Extract the [[source]] array from the TOML

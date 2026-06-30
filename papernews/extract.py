@@ -25,7 +25,7 @@ def extract(url: str, title: str, source: str) -> Article | None:
         include_tables=True,
         include_links=True,
         include_images=True,
-        favor_precision=True, # Prevent navigation cruft & short entries from being included
+        favor_precision=True,  # Prevent navigation cruft & short entries from being included
     )
     if not text or len(text) < 200:
         return None

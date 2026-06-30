@@ -1,8 +1,9 @@
 # papernews/plugins/wiki_plugin.py
+import pluggy
 import requests
 from bs4 import BeautifulSoup
-import pluggy
 from prefect import get_run_logger
+
 from papernews.models import FrontpageDecorations
 
 hookimpl = pluggy.HookimplMarker("papernews")

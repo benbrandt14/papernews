@@ -1,23 +1,22 @@
 # papernews/core/main.py
+import os
 import re
-from typing import List
-from prefect import flow, task, get_run_logger
-import pluggy
 import tomllib
+from datetime import UTC, date, datetime
 from email.utils import parsedate_to_datetime
-
+from pathlib import Path
 from urllib.parse import urlparse
+
+import pluggy
+from prefect import flow, task
+
 from papernews.core.router import (
     llm_format_body,
     llm_select_article,
     llm_summarize_article,
 )
-import os
-from datetime import date, datetime, timezone
-from pathlib import Path
-
+from papernews.models import ArticleChunk, FrontpageDecorations, RawDocument, Telemetry
 from papernews.render import build_pdf
-from papernews.models import ArticleChunk, RawDocument, Telemetry, FrontpageDecorations
 
 # Configuration
 MAX_BUDGET = 12
@@ -31,9 +30,9 @@ NOISE_PATTERNS = [
 
 def get_human_time(dt: datetime) -> str:
     """Converts a parsed datetime into '2 days ago', 'today', etc."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)  # Assume UTC if naive
+        dt = dt.replace(tzinfo=UTC)  # Assume UTC if naive
     diff = now - dt
 
     if diff.days == 0:
@@ -52,13 +51,13 @@ def get_human_time(dt: datetime) -> str:
 
 
 @task(name="Stage 1: Ingestion")
-def stage1_ingestion(source_config: dict) -> List[RawDocument]:
+def stage1_ingestion(source_config: dict) -> list[RawDocument]:
     """Dynamically loads all plugins and fetches RawDocuments."""
     pm = pluggy.PluginManager("papernews")
 
     # In a real app, you would load hookspecs and module plugins here
     # For now, we manually register the RSS plugin module
-    from papernews.plugins import rss_plugin, hn_plugin
+    from papernews.plugins import hn_plugin, rss_plugin
 
     pm.register(rss_plugin)
     pm.register(hn_plugin)
@@ -74,8 +73,8 @@ def stage1_ingestion(source_config: dict) -> List[RawDocument]:
 
 @task(name="Stage 2A: Deterministic Blacklist Filter")
 def triage_process_a_filter(
-    documents: List[RawDocument], prefs: dict
-) -> List[RawDocument]:
+    documents: list[RawDocument], prefs: dict
+) -> list[RawDocument]:
     filtered_docs = []
     blacklist = prefs.get("blacklist_words", [])
     max_char_length = prefs.get("max_char_length", 20000)
@@ -106,8 +105,8 @@ def triage_process_a_filter(
 
 @task(name="Stage 2B: Local Ranking")
 def triage_process_b_rank(
-    documents: List[RawDocument], prefs: dict
-) -> List[RawDocument]:
+    documents: list[RawDocument], prefs: dict
+) -> list[RawDocument]:
     interests = prefs.get("interest", [])
 
     def heuristic_score(doc: RawDocument) -> int:
@@ -128,8 +127,8 @@ def triage_process_b_rank(
 
 @task(name="Stage 2C: Category Limit Enforcer")
 def triage_process_c_budget(
-    documents: List[RawDocument], limits: dict, prefs: dict
-) -> List[RawDocument]:
+    documents: list[RawDocument], limits: dict, prefs: dict
+) -> list[RawDocument]:
     """
     Enforces the [category_limits] strictly in Python so we never
     pay the LLM to process more articles than the PDF requires.
@@ -155,8 +154,8 @@ def triage_process_c_budget(
 
 @task(name="Stage 3: Hybrid Construction")
 def stage3_hybrid_construction(
-    documents: List[RawDocument], prefs: dict
-) -> tuple[List[ArticleChunk], Telemetry]:
+    documents: list[RawDocument], prefs: dict
+) -> tuple[list[ArticleChunk], Telemetry]:
     processed_chunks = []
     total_run_telemetry = Telemetry()
 
@@ -238,7 +237,7 @@ def stage4b_fetch_decorations(source_config: dict) -> dict:
 
 @task(name="Stage 5: Bespoke Renderer")
 def stage5_bespoke_render(
-    articles: List[ArticleChunk], total_telemetry: Telemetry, decorations
+    articles: list[ArticleChunk], total_telemetry: Telemetry, decorations
 ) -> Path:
     out_dir = Path(os.getcwd()) / "output"
     out_dir.mkdir(exist_ok=True)
@@ -275,7 +274,7 @@ def run_papernews(source_config: dict):
     limits = source_config.get("category_limits", {})
 
     raw_docs = stage1_ingestion(source_config)
-    
+
     filtered = triage_process_a_filter(raw_docs, prefs)
     ranked = triage_process_b_rank(filtered, prefs)
     budgeted = triage_process_c_budget(ranked, limits, prefs)
@@ -283,7 +282,7 @@ def run_papernews(source_config: dict):
     article_chunks, total_telemetry = stage3_hybrid_construction(budgeted, prefs)
 
     decorations = stage4b_fetch_decorations(source_config)
-    
+
     pdf_path = stage5_bespoke_render(article_chunks, total_telemetry, decorations)
 
     return pdf_path

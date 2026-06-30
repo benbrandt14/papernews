@@ -6,6 +6,7 @@ The current edition is determined by:
 
 When either changes, the cache key changes and a rebuild is triggered.
 """
+
 from __future__ import annotations
 
 import hashlib

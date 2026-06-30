@@ -1,0 +1,42 @@
+name: CI Gauntlet
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  gauntlet:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Formatting Check
+        run: uv run ruff format --check --output-format=concise
+
+      - name: Linting Check
+        run: uv run ruff check --output-format=concise
+
+      - name: Type Checking
+        run: uv run mypy papernews/
+
+      - name: The Test Gauntlet
+        env:
+          PREFECT_TEST_MODE: "true"
+          PREFECT_SERVER_ALLOW_EPHEMERAL_MODE: "false"
+          PREFECT_API_URL: ""
+          GEMINI_API_KEY: "dummy-key-for-ci"
+        run: uv run pytest tests/ -n auto -q --tb=short --disable-warnings

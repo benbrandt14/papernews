@@ -1,6 +1,6 @@
-import pytest
-from papernews.models import ArticleChunk, Telemetry, Annotation
 from papernews.adapter import article_to_dict
+from papernews.models import Annotation, ArticleChunk, Telemetry
+
 
 def test_article_to_dict_conversion():
     """
@@ -23,7 +23,7 @@ def test_article_to_dict_conversion():
         telemetry=Telemetry(prompt_tokens=1500, output_tokens=500),
         annotations=[
             Annotation(source="AI", content="A great read.", completion_percentage=100)
-        ]
+        ],
     )
 
     data = article_to_dict(chunk)
@@ -51,10 +51,16 @@ def test_article_to_dict_conversion():
     # * 100 = 0.02625 cents (< 0.05)
     assert data["telemetry"]["formatted_cost"] == "~ 0"
 
+
 def test_article_to_dict_cost_formatting():
     chunk = ArticleChunk(
-        category="Tech", source="Source", title="Title", summary="Sum", body_markdown="Body", url="URL",
-        telemetry=Telemetry(prompt_tokens=1_000_000, output_tokens=1_000_000)
+        category="Tech",
+        source="Source",
+        title="Title",
+        summary="Sum",
+        body_markdown="Body",
+        url="URL",
+        telemetry=Telemetry(prompt_tokens=1_000_000, output_tokens=1_000_000),
     )
     data = article_to_dict(chunk)
     # 1M prompt = $0.075, 1M output = $0.30 => Total $0.375 => 37.5 cents

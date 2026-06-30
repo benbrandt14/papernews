@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 import tomllib
-import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date as date_cls, datetime
+from datetime import date as date_cls
+from datetime import datetime
 from pathlib import Path
 
 from .extract import extract
@@ -192,7 +193,7 @@ def cmd_select(store: Store, sources: list[dict], prefs: dict, cat_limits: dict)
     if total_sel > 0 or total_rej > 0:
         _log(f"[select] Total: selected {total_sel}, rejected {total_rej}")
     else:
-        _log(f"[select] nothing pending")
+        _log("[select] nothing pending")
 
     return 0
 

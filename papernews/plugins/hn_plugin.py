@@ -1,8 +1,10 @@
 import time
-import requests
+
 import pluggy
+import requests
 import trafilatura
 from prefect import get_run_logger
+
 from papernews.models import RawDocument
 
 hookimpl = pluggy.HookimplMarker("papernews")

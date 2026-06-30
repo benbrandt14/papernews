@@ -34,3 +34,25 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["papernews"]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.1.0",
+    "pytest-xdist>=3.8.0",
+    "ruff>=0.15.20",
+]
+
+[tool.ruff]
+# Enable Pyflakes (F), pycodestyle (E), isort (I), and pyupgrade (UP)
+lint.select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+# Global options:
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "papernews.core.*",
+    "papernews.models",
+]
+disallow_untyped_defs = true

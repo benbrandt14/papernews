@@ -3,13 +3,13 @@ from __future__ import annotations
 import functools
 import hashlib
 import re
-import shutil
 import sys
 import urllib.request
 from pathlib import Path
 
 import jinja2
 from PIL import Image
+
 from .models import ArticleChunk
 
 _TYPST_REPLACE = {
@@ -179,7 +179,7 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
             processed_images.append((filename, aspect, width_px))
 
         out_str = ""
-        current_valid_group = []
+        current_valid_group: list[str] = []
 
         def flush_valid_group():
             nonlocal out_str
@@ -211,7 +211,7 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
 
                 cols = 2
                 grid_str = (
-                    f'grid(columns: {cols}, gutter: 6pt, {", ".join(grid_items)})'
+                    f"grid(columns: {cols}, gutter: 6pt, {', '.join(grid_items)})"
                 )
                 bits.append(f"#figure({grid_str}, placement: auto)/**/")
                 out_str += f"\x00IMG{len(bits) - 1}\x00"
@@ -497,9 +497,9 @@ def build_pdf(
     try:
         typst.compile(str(typst_path), output=str(pdf_dst))
     except typst.TypstError as e:
-        sys.stderr.write(f"\n" + "=" * 70 + "\n")
-        sys.stderr.write(f"[FATAL] TYPST COMPILATION FAILED\n")
-        sys.stderr.write(f"=" * 70 + "\n")
+        sys.stderr.write("\n" + "=" * 70 + "\n")
+        sys.stderr.write("[FATAL] TYPST COMPILATION FAILED\n")
+        sys.stderr.write("=" * 70 + "\n")
         sys.stderr.write(f"Error Message: {e}\n\n")
 
         lines = typst_source.split("\n")
@@ -529,10 +529,10 @@ def build_pdf(
                 "(This usually means a layout rule was violated, like pagebreaks inside columns).\n\n"
             )
             sys.stderr.write(
-                f"--> I have generated a numbered source file for you to inspect here:\n"
+                "--> I have generated a numbered source file for you to inspect here:\n"
             )
             sys.stderr.write(f"--> {debug_path}\n")
 
-        sys.stderr.write(f"=" * 70 + "\n")
+        sys.stderr.write("=" * 70 + "\n")
 
     return pdf_dst

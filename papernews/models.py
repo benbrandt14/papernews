@@ -1,6 +1,7 @@
 # papernews/models.py
+from typing import Literal
+
 from pydantic import BaseModel, Field
-from typing import Literal, List, Optional
 
 # Fixed Pricing Constants ($, Gemini 2.5 Flash)
 COST_PER_1M_PROMPT = 0.075
@@ -37,7 +38,7 @@ class Telemetry(BaseModel):
     prompt_tokens: int = 0
     output_tokens: int = 0
 
-    def __add__(self, other):
+    def __add__(self, other: 'Telemetry') -> 'Telemetry':
         return Telemetry(
             prompt_tokens=self.prompt_tokens + other.prompt_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
@@ -86,4 +87,4 @@ class ArticleChunk(BaseModel):
     published_date: str = ""
     relative_time: str = ""
     telemetry: Telemetry = Field(default_factory=Telemetry)
-    annotations: List[Annotation] = Field(default_factory=list)
+    annotations: list[Annotation] = Field(default_factory=list)
