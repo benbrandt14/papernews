@@ -15,10 +15,9 @@ class Article:
     published: str | None = None  # ISO date from page metadata, may be None
 
 
-from trafilatura.settings import use_config
-
-
 def extract(url: str, title: str, source: str) -> Article | None:
+    from trafilatura.settings import use_config
+
     config = use_config()
     config.set("DEFAULT", "MAX_FILE_SIZE", "5242880")  # 5MB limit
     config.set("DEFAULT", "TIMEOUT", "5")

@@ -12,6 +12,8 @@ import jinja2
 from PIL import Image
 from .models import ArticleChunk
 
+_STRICT_MATH_RE = re.compile(r"\$\$[^\$]+?\$\$|\$(?!\s)[^$\n]+?(?<!\s)\$")
+
 _TYPST_REPLACE = {
     "\\": r"\\",
     "*": r"\*",
@@ -27,9 +29,6 @@ _TYPST_REPLACE = {
     "[": r"\[",
     "]": r"\]",
 }
-
-
-_STRICT_MATH_RE = re.compile(r"\$\$[^\$]+?\$\$|\$(?!\s)[^$\n]+?(?<!\s)\$")
 
 
 def typst_escape(s) -> str:
@@ -131,7 +130,7 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
         assets_dir = workdir / "assets"
         assets_dir.mkdir(parents=True, exist_ok=True)
 
-        processed_images = []
+        processed_images: list[str | tuple[str, float, int]] = []
 
         for alt, url in img_matches:
             url_hash = hashlib.sha256(url.encode()).hexdigest()[:16]
@@ -212,7 +211,7 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
             processed_images.append((filename, aspect, width_px))
 
         out_str = ""
-        current_valid_group = []
+        current_valid_group: list[tuple[str, float, int]] = []
 
         def flush_valid_group():
             nonlocal out_str
