@@ -1,5 +1,6 @@
 from papernews.models import ArticleChunk
 
+
 def article_to_dict(chunk: ArticleChunk) -> dict:
     """
     Converts an ArticleChunk Pydantic model into a dictionary suitable for Jinja templating.

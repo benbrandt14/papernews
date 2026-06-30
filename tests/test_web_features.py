@@ -8,13 +8,11 @@ Typst. They cover the four user-visible features added in that issue:
     3. GET /ingest returns a 405 with a helpful JSON hint
     4. POST_INGEST_HOOK fires after a successful ingest
 """
+
 from __future__ import annotations
 
 import os
 import stat
-import subprocess
-from pathlib import Path
-from unittest import mock
 
 import pytest
 
@@ -27,12 +25,15 @@ os.environ.setdefault("PAPERNEWS_CACHE", "/tmp/papernews-tests-cache")
 def _fresh_scheduler():
     """Re-import start_scheduler so it picks up the current env vars."""
     from importlib import reload
+
     import papernews.web as web
+
     reload(web)
     return web.start_scheduler()
 
 
 # --- 1 & 2: scheduler modes -----------------------------------------------
+
 
 @pytest.fixture
 def clean_scheduler_env(monkeypatch):
@@ -49,15 +50,23 @@ def test_cron_schedule_creates_one_job_per_time(clean_scheduler_env, monkeypatch
         jobs = sched.get_jobs()
         assert len(jobs) == 2
         triggers = [str(j.trigger) for j in jobs]
-        assert any("hour='7'" in t and "minute='0'" in t for t in triggers), f"no 07:00 trigger in {triggers}"
-        assert any("hour='18'" in t and "minute='30'" in t for t in triggers), f"no 18:30 trigger in {triggers}"
+        assert any("hour='7'" in t and "minute='0'" in t for t in triggers), (
+            f"no 07:00 trigger in {triggers}"
+        )
+        assert any("hour='18'" in t and "minute='30'" in t for t in triggers), (
+            f"no 18:30 trigger in {triggers}"
+        )
         tzs = {str(j.trigger.timezone) for j in jobs}
-        assert any("Europe/London" in z for z in tzs), f"timezone not propagated; got {tzs}"
+        assert any("Europe/London" in z for z in tzs), (
+            f"timezone not propagated; got {tzs}"
+        )
     finally:
         sched.shutdown(wait=False)
 
 
-def test_cron_ignores_malformed_entries_but_keeps_valid_ones(clean_scheduler_env, monkeypatch):
+def test_cron_ignores_malformed_entries_but_keeps_valid_ones(
+    clean_scheduler_env, monkeypatch
+):
     monkeypatch.setenv("INGEST_SCHEDULE", "07:00,not-a-time,18:00")
     sched = _fresh_scheduler()
     try:
@@ -81,8 +90,10 @@ def test_interval_fallback_when_no_schedule(clean_scheduler_env, monkeypatch):
 
 # --- 3: GET /ingest helper -------------------------------------------------
 
+
 def test_get_ingest_returns_helpful_405():
     from papernews.web import app
+
     client = app.test_client()
     r = client.get("/ingest")
     assert r.status_code == 405
@@ -94,6 +105,7 @@ def test_get_ingest_returns_helpful_405():
 
 
 # --- 4: POST_INGEST_HOOK ---------------------------------------------------
+
 
 @pytest.fixture
 def hook_env(tmp_path, monkeypatch):
@@ -116,7 +128,9 @@ def test_hook_runs_with_pdf_path_after_successful_ingest(hook_env, monkeypatch, 
     monkeypatch.setenv("POST_INGEST_HOOK", str(hook))
 
     from importlib import reload
+
     import papernews.web as web
+
     reload(web)
 
     mocker.patch.object(web, "cmd_ingest", return_value=0)
@@ -139,7 +153,9 @@ def test_hook_failure_does_not_propagate(hook_env, monkeypatch, mocker):
     monkeypatch.setenv("POST_INGEST_HOOK", str(bad_hook))
 
     from importlib import reload
+
     import papernews.web as web
+
     reload(web)
 
     mocker.patch.object(web, "cmd_ingest", return_value=0)
@@ -154,7 +170,9 @@ def test_hook_failure_does_not_propagate(hook_env, monkeypatch, mocker):
 
 def test_no_hook_means_no_subprocess(hook_env, mocker):
     from importlib import reload
+
     import papernews.web as web
+
     reload(web)
 
     mocker.patch.object(web, "cmd_ingest", return_value=0)

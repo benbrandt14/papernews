@@ -1,7 +1,6 @@
 # papernews/store.py
 import sqlite3
 from pathlib import Path
-from typing import Optional
 
 
 class SimpleStore:
@@ -25,7 +24,7 @@ class SimpleStore:
                 )
             """)
 
-    def get_cache(self, cache_key: str) -> Optional[str]:
+    def get_cache(self, cache_key: str) -> str | None:
         """Fetch a cached string response."""
         with sqlite3.connect(self.db_path) as conn:
             cur = conn.execute(

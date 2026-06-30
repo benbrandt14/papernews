@@ -27,6 +27,7 @@ Environment:
 
   ANTHROPIC_API_KEY      required for the Claude SDK
 """
+
 from __future__ import annotations
 
 import os
@@ -38,7 +39,7 @@ from datetime import date
 from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask, abort, jsonify, redirect, send_file, request
+from flask import Flask, jsonify, send_file
 
 from .cache import edition_key, ensure_dir, pdf_path, preview_path
 from .cli import (
@@ -50,18 +51,18 @@ from .preview import render_cover_png
 from .render import build_pdf
 from .store import SimpleStore as Store
 
-
 # --- Config helpers -------------------------------------------------------
+
 
 def _cfg_path(env_var: str, default: str) -> Path:
     return Path(os.environ.get(env_var, default))
 
 
-STATE_PATH    = _cfg_path("PAPERNEWS_STATE",  "state.db")
-CONFIG_PATH   = _cfg_path("PAPERNEWS_CONFIG", "sources.toml")
-CACHE_DIR     = _cfg_path("PAPERNEWS_CACHE",  "archive/cache")
-WORKERS       = int(os.environ.get("PAPERNEWS_WORKERS", "8"))
-INGEST_EVERY  = int(os.environ.get("INGEST_INTERVAL_SECONDS", str(4 * 3600)))
+STATE_PATH = _cfg_path("PAPERNEWS_STATE", "state.db")
+CONFIG_PATH = _cfg_path("PAPERNEWS_CONFIG", "sources.toml")
+CACHE_DIR = _cfg_path("PAPERNEWS_CACHE", "archive/cache")
+WORKERS = int(os.environ.get("PAPERNEWS_WORKERS", "8"))
+INGEST_EVERY = int(os.environ.get("INGEST_INTERVAL_SECONDS", str(4 * 3600)))
 
 
 def _load_config() -> tuple[list[dict], dict, dict]:
@@ -73,6 +74,7 @@ def _load_config() -> tuple[list[dict], dict, dict]:
         prefs = prefs[0] if prefs else {}
     cat_limits = cfg.get("category_limits", {})
     return sources, prefs, cat_limits
+
 
 def _load_sources() -> list[dict]:
     return _load_config()[0]
@@ -176,6 +178,7 @@ def _do_ingest() -> None:
 
 # --- Flask app ------------------------------------------------------------
 
+
 def create_app() -> Flask:
     app = Flask(__name__, static_folder=None)
 
@@ -197,13 +200,15 @@ def create_app() -> Flask:
     def sources_endpoint():
         sources = _load_sources()
         store = Store(STATE_PATH)
-        return jsonify({
-            "sources": [
-                {"name": s["name"], "kind": s.get("kind"), "limit": s.get("limit")}
-                for s in sources
-            ],
-            "max_fetched_at": store.max_fetched_at(),
-        })
+        return jsonify(
+            {
+                "sources": [
+                    {"name": s["name"], "kind": s.get("kind"), "limit": s.get("limit")}
+                    for s in sources
+                ],
+                "max_fetched_at": store.max_fetched_at(),
+            }
+        )
 
     @app.get("/digest.pdf")
     def digest_pdf():
@@ -240,11 +245,13 @@ def create_app() -> Flask:
     def ingest_get_hint():
         # Friendly 405 — easier than rediscovering you wanted POST.
         return (
-            jsonify({
-                "error": "POST required to trigger ingest",
-                "hint": "curl -X POST http://localhost:8000/ingest",
-                "note": "the background scheduler also runs ingest automatically",
-            }),
+            jsonify(
+                {
+                    "error": "POST required to trigger ingest",
+                    "hint": "curl -X POST http://localhost:8000/ingest",
+                    "note": "the background scheduler also runs ingest automatically",
+                }
+            ),
             405,
         )
 
@@ -268,8 +275,10 @@ def start_scheduler() -> BackgroundScheduler:
             try:
                 h, m = hm.split(":")
                 sched.add_job(
-                    _do_ingest, "cron",
-                    hour=int(h), minute=int(m),
+                    _do_ingest,
+                    "cron",
+                    hour=int(h),
+                    minute=int(m),
                     id=f"ingest_cron_{i}",
                     timezone=tz,
                 )
@@ -277,9 +286,13 @@ def start_scheduler() -> BackgroundScheduler:
                 sys.stderr.write(f"[scheduler] ignoring invalid time: {hm!r}\n")
                 sys.stderr.flush()
     else:
-        sched.add_job(_do_ingest, "interval",
-                      seconds=INGEST_EVERY, id="ingest",
-                      next_run_time=None)
+        sched.add_job(
+            _do_ingest,
+            "interval",
+            seconds=INGEST_EVERY,
+            id="ingest",
+            next_run_time=None,
+        )
     sched.start()
     return sched
 

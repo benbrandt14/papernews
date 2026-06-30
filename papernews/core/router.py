@@ -1,16 +1,15 @@
 # papernews/core/router.py
-import os
-from typing import Optional
-from prefect import task, get_run_logger
 from google import genai
 from google.genai import types
-from papernews.store import SimpleStore
+from prefect import get_run_logger, task
+
 from papernews.models import (
-    RawDocument,
     LLMArticleSelection,
     LLMArticleSummary,
+    RawDocument,
     Telemetry,
 )
+from papernews.store import SimpleStore
 
 LLM_ENABLE = False
 SUMMARY_INPUT_LENGTH = 1500
