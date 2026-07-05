@@ -15,20 +15,22 @@ An offline-first, highly customized E-Ink daily digest. A Prefect pipeline pulls
 Manage your feeds and categories in `sources.toml`. Order matters: sources appear in this sequence in the generated PDF.
 
 ```toml
-[[sources]]
+[[source]]
 name = "Hacker News Top"
-url = "" # Handled internally by the plugin
-kind = "hn"
+kind = "hn" # URL handled internally by the plugin
 category = "Technology"
 limit = 5
 
-[[sources]]
+[[source]]
 name = "Quanta Magazine"
-url = "[https://api.quantamagazine.org/feed/](https://api.quantamagazine.org/feed/)"
+url = "https://api.quantamagazine.org/feed/"
 kind = "rss"
 category = "Science"
 
 ```
+
+The file is validated at load time: unknown keys and `[category_limits]`
+entries that don't match any source category are rejected loudly.
 
 ## Plugins & Hacker News (HN) Fetching
 

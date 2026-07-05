@@ -33,7 +33,6 @@ def test_telemetry_property(prompt_tokens, output_tokens):
         summary=st.text(),
         body_markdown=st.text(),
         url=st.text(),
-        url_hash=st.text(),
         date=st.text(),
         published_date=st.text(),
         relative_time=st.text(),

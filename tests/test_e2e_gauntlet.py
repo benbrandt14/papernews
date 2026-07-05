@@ -21,13 +21,14 @@ HOSTILE_STRINGS = [
 os.environ["GEMINI_API_KEY"] = "fake-key-for-tests"
 from datetime import date
 
+from papernews.config import AppConfig, Preferences
 from papernews.core.main import (
     stage3_hybrid_construction,
     stage5_bespoke_render,
     triage_process_a_filter,
     triage_process_b_rank,
 )
-from papernews.models import Telemetry
+from papernews.models import FrontpageDecorations, Telemetry
 from papernews.plugins import rss_plugin
 
 
@@ -73,14 +74,21 @@ def test_e2e_gauntlet(mocker, tmp_path, monkeypatch):
     mocker.patch("trafilatura.fetch_url", return_value="<html></html>")
     mocker.patch("trafilatura.extract", side_effect=HOSTILE_STRINGS)
 
-    source_config = {
-        "source": [{"kind": "rss", "url": "http://fake.com", "category": "News"}]
-    }
+    source_config = AppConfig(
+        sources=[
+            {
+                "name": "Fake",
+                "kind": "rss",
+                "url": "http://fake.com",
+                "category": "News",
+            }
+        ]
+    )
 
     raw_docs = rss_plugin.fetch_sources(source_config)
     assert len(raw_docs) == len(HOSTILE_STRINGS)
 
-    prefs = {}
+    prefs = Preferences()
 
     # Stages 1, 2, 3, 4, 5 pipeline
     filtered = triage_process_a_filter.fn(raw_docs, prefs)
@@ -103,19 +111,10 @@ def test_e2e_gauntlet(mocker, tmp_path, monkeypatch):
 
     # Stage 4 Pipeline
 
-    mocker.patch(
-        "papernews.plugins.wiki_plugin.fetch_decorations", return_value=[], create=True
+    decorations = FrontpageDecorations(
+        world_news=["Something happened [somewhere] $today"],
+        dyk=["... that hostile *strings* are #tested here?"],
     )
-    # The plugin system hook itself is throwing an error since hookspec isn't loaded.
-    # Let's mock stage4b_fetch_decorations entirely.
-    decorations = {
-        "generation_time": "Now",
-        "total_tokens": "0",
-        "total_cost": "0",
-        "quote": None,
-        "world_news": [],
-        "dyk": [],
-    }
 
     monkeypatch.chdir(tmp_path)
 

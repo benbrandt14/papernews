@@ -332,3 +332,38 @@ def test_process_inline_property(text):
     # Tests that varied inputs do not crash the inline processing.
     processed = _process_inline(text)
     assert isinstance(processed, str)
+
+
+def test_build_pdf_raises_render_error_on_compile_failure(tmp_path, mocker):
+    """A failed Typst compile must raise, never silently return a stale path."""
+    from papernews.models import RenderContext
+    from papernews.render import RenderError, build_pdf
+
+    ctx = RenderContext(
+        date="2026-01-01",
+        generation_time="Now",
+        total_tokens="0",
+        total_cost="0",
+        articles=[],
+    )
+    mocker.patch("typst.compile", side_effect=typst.TypstError("boom"))
+
+    with pytest.raises(RenderError, match="2026-01-01"):
+        build_pdf(ctx, tmp_path)
+
+
+def test_build_pdf_produces_pdf(tmp_path):
+    """Happy path: an empty edition compiles to a real PDF."""
+    from papernews.models import RenderContext
+    from papernews.render import build_pdf
+
+    ctx = RenderContext(
+        date="2026-01-01",
+        generation_time="Now",
+        total_tokens="0",
+        total_cost="0",
+        articles=[],
+    )
+    pdf = build_pdf(ctx, tmp_path)
+    assert pdf.exists()
+    assert pdf.read_bytes()[:4] == b"%PDF"

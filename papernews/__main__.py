@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-import tomllib
 from pathlib import Path
 
 
@@ -31,13 +30,15 @@ def main(argv: list[str] | None = None) -> int:
         if not config_path.exists():
             print(f"Error: {config_path.absolute()} not found.", file=sys.stderr)
             return 1
-        with open(config_path, "rb") as f:
-            config = tomllib.load(f)
-        print(f"Loaded config with {len(config.get('source', []))} sources.")
+
+        from papernews.config import load_config
+
+        config = load_config(config_path)
+        print(f"Loaded config with {len(config.sources)} sources.")
 
         from papernews.core.main import run_papernews
 
-        pdf_path = run_papernews(source_config=config)
+        pdf_path = run_papernews(config=config)
         print(f"Built {pdf_path}")
         return 0
 

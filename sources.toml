@@ -8,16 +8,6 @@
 # World news (Wikipedia Current events) is rendered inline on page 1 from
 # decorations — NOT configured here as a regular article source.
 
-# Add, remove, or reorder sources here.
-# kind = "hn"  -> Hacker News via Algolia search (top by points in a window)
-# kind = "rss" -> RSS/Atom feed via feedparser
-#
-# Order matters: sources appear in this order in the PDF contents and
-# article sequence. Quality first, social last.
-
-# World news (Wikipedia Current events) is rendered inline on page 1 from
-# decorations — NOT configured here as a regular article source.
-
 # --- Math / Science ------------------------------------------------------
 
 [[source]]
@@ -165,7 +155,7 @@ disinterest = ["sensationalism and repetitive verbosity","local announcements or
 "Math" = 2
 "Space" = 2
 "Academic" = 3
-"Artificial Intellegence" = 2
+"Artificial Intelligence" = 2
 "Programming" = 2
 "Music" = 1
 "Photography" = 1

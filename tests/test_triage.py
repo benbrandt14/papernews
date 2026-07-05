@@ -1,6 +1,7 @@
 import os
 
 os.environ["GEMINI_API_KEY"] = "dummy"
+from papernews.config import Preferences
 from papernews.core.main import (
     triage_process_a_filter,
     triage_process_b_rank,
@@ -15,9 +16,9 @@ def test_filter_drops_short_rss():
         source_id="1",
         content_type="rss",
         raw_text="A" * 100,
-        metadata={"title": "Short Document"},
+        title="Short Document",
     )
-    result = func([doc], {})
+    result = func([doc], Preferences())
     assert len(result) == 0
 
 
@@ -27,32 +28,32 @@ def test_filter_keeps_short_non_rss():
         source_id="1",
         content_type="wiki_event",
         raw_text="A" * 100,
-        metadata={"title": "Short Document"},
+        title="Short Document",
     )
-    result = func([doc], {})
+    result = func([doc], Preferences())
     assert len(result) == 1
 
 
 def test_filter_drops_blacklisted():
     func = getattr(triage_process_a_filter, "fn", triage_process_a_filter)
-    prefs = {"blacklist_words": ["badword", "terrible"]}
+    prefs = Preferences(blacklist_words=["badword", "terrible"])
     doc1 = RawDocument(
         source_id="1",
         content_type="rss",
         raw_text="This has a badword in it." + ("A" * 800),
-        metadata={"title": "Doc 1"},
+        title="Doc 1",
     )
     doc2 = RawDocument(
         source_id="2",
         content_type="rss",
         raw_text="This is fine." + ("A" * 800),
-        metadata={"title": "This is terrible!"},
+        title="This is terrible!",
     )
     doc3 = RawDocument(
         source_id="3",
         content_type="rss",
         raw_text="This is perfectly fine." + ("A" * 800),
-        metadata={"title": "Good title"},
+        title="Good title",
     )
     result = func([doc1, doc2, doc3], prefs)
     assert len(result) == 1
@@ -61,108 +62,117 @@ def test_filter_drops_blacklisted():
 
 def test_filter_keeps_clean():
     func = getattr(triage_process_a_filter, "fn", triage_process_a_filter)
-    prefs = {"blacklist_words": ["badword", "terrible"]}
+    prefs = Preferences(blacklist_words=["badword", "terrible"])
     doc = RawDocument(
         source_id="1",
         content_type="rss",
         raw_text="This is clean." + ("A" * 800),
-        metadata={"title": "Clean"},
+        title="Clean",
     )
     result = func([doc], prefs)
     assert len(result) == 1
+
+
+def test_filter_drops_url_only_body():
+    """The built-in noise patterns drop docs whose body is just a bare URL."""
+    func = getattr(triage_process_a_filter, "fn", triage_process_a_filter)
+    doc = RawDocument(
+        source_id="1",
+        content_type="wiki_event",  # short-doc gate doesn't apply
+        raw_text="https://example.com/some-page",
+        title="Linkdump",
+    )
+    result = func([doc], Preferences())
+    assert len(result) == 0
+
+
+def test_filter_drops_noise_topic_in_title():
+    func = getattr(triage_process_a_filter, "fn", triage_process_a_filter)
+    doc = RawDocument(
+        source_id="1",
+        content_type="rss",
+        raw_text="Interesting body text. " + ("A" * 800),
+        title="New results in mice models of disease",
+    )
+    result = func([doc], Preferences())
+    assert len(result) == 0
 
 
 def test_rank_prioritizes_interests():
     func = getattr(triage_process_b_rank, "fn", triage_process_b_rank)
-    prefs = {"interest": ["Science", "AI tech"]}
+    prefs = Preferences(interest=["Science", "AI tech"])
     doc = RawDocument(
         source_id="1",
         content_type="rss",
         raw_text="Text",
-        metadata={"title": "A new science discovery"},
+        title="A new science discovery",
     )
     result = func([doc], prefs)
     assert len(result) == 1
-    assert result[0].metadata["heuristic_score"] == 1
+    assert result[0].heuristic_score == 1
 
 
 def test_rank_assigns_default():
     func = getattr(triage_process_b_rank, "fn", triage_process_b_rank)
-    prefs = {"interest": ["Science", "AI"]}
+    prefs = Preferences(interest=["Science", "AI"])
     doc = RawDocument(
         source_id="1",
         content_type="rss",
         raw_text="Text",
-        metadata={"title": "Some random topic"},
+        title="Some random topic",
     )
     result = func([doc], prefs)
     assert len(result) == 1
-    assert result[0].metadata["heuristic_score"] == 3
+    assert result[0].heuristic_score == 3
 
 
 def test_rank_sorts_correctly():
     func = getattr(triage_process_b_rank, "fn", triage_process_b_rank)
-    prefs = {"interest": ["AI"]}
+    prefs = Preferences(interest=["AI"])
     doc1 = RawDocument(
-        source_id="1",
-        content_type="rss",
-        raw_text="Text",
-        metadata={"title": "Random topic"},
+        source_id="1", content_type="rss", raw_text="Text", title="Random topic"
     )
     doc2 = RawDocument(
-        source_id="2",
-        content_type="rss",
-        raw_text="Text",
-        metadata={"title": "AI is cool"},
+        source_id="2", content_type="rss", raw_text="Text", title="AI is cool"
     )
     doc3 = RawDocument(
         source_id="3",
         content_type="rss",
         raw_text="Text",
-        metadata={"title": "Another random topic"},
+        title="Another random topic",
     )
     result = func([doc1, doc2, doc3], prefs)
     assert len(result) == 3
     assert result[0].source_id == "2"
-    assert result[0].metadata["heuristic_score"] == 1
-    assert result[1].metadata["heuristic_score"] == 3
-    assert result[2].metadata["heuristic_score"] == 3
+    assert result[0].heuristic_score == 1
+    assert result[1].heuristic_score == 3
+    assert result[2].heuristic_score == 3
+
+
+def test_rank_does_not_mutate_inputs():
+    """Stage 2B must return scored copies, never mutate its input docs."""
+    func = getattr(triage_process_b_rank, "fn", triage_process_b_rank)
+    doc = RawDocument(
+        source_id="1", content_type="rss", raw_text="Text", title="AI is cool"
+    )
+    result = func([doc], Preferences(interest=["AI"]))
+    assert result[0].heuristic_score == 1
+    assert doc.heuristic_score == 3  # original untouched
 
 
 def test_budget_enforces_category_limits():
     func = getattr(triage_process_c_budget, "fn", triage_process_c_budget)
     limits = {"Tech": 2, "Science": 1}
-    prefs = {"default_category_limit": 1}
+    prefs = Preferences(default_category_limit=1)
     docs = [
+        RawDocument(source_id="1", content_type="rss", raw_text="A", category="Tech"),
+        RawDocument(source_id="2", content_type="rss", raw_text="A", category="Tech"),
+        RawDocument(source_id="3", content_type="rss", raw_text="A", category="Tech"),
         RawDocument(
-            source_id="1",
-            content_type="rss",
-            raw_text="A",
-            metadata={"category": "Tech"},
+            source_id="4", content_type="rss", raw_text="A", category="Science"
         ),
         RawDocument(
-            source_id="2",
-            content_type="rss",
-            raw_text="A",
-            metadata={"category": "Tech"},
-        ),
-        RawDocument(
-            source_id="3",
-            content_type="rss",
-            raw_text="A",
-            metadata={"category": "Tech"},
-        ),
-        RawDocument(
-            source_id="4",
-            content_type="rss",
-            raw_text="A",
-            metadata={"category": "Science"},
-        ),
-        RawDocument(
-            source_id="5",
-            content_type="rss",
-            raw_text="A",
-            metadata={"category": "Science"},
+            source_id="5", content_type="rss", raw_text="A", category="Science"
         ),
     ]
     result = func(docs, limits, prefs)
@@ -173,20 +183,10 @@ def test_budget_enforces_category_limits():
 def test_budget_uses_default_limit():
     func = getattr(triage_process_c_budget, "fn", triage_process_c_budget)
     limits = {"Tech": 2}
-    prefs = {"default_category_limit": 1}
+    prefs = Preferences(default_category_limit=1)
     docs = [
-        RawDocument(
-            source_id="1",
-            content_type="rss",
-            raw_text="A",
-            metadata={"category": "Misc"},
-        ),
-        RawDocument(
-            source_id="2",
-            content_type="rss",
-            raw_text="A",
-            metadata={"category": "Misc"},
-        ),
+        RawDocument(source_id="1", content_type="rss", raw_text="A", category="Misc"),
+        RawDocument(source_id="2", content_type="rss", raw_text="A", category="Misc"),
     ]
     result = func(docs, limits, prefs)
     assert len(result) == 1
@@ -199,9 +199,9 @@ def test_filter_drops_overly_long():
         source_id="1",
         content_type="rss",
         raw_text="A" * 50000,
-        metadata={"title": "Too Long Document"},
+        title="Too Long Document",
     )
-    result = func([doc], {"max_char_length": 20000})
+    result = func([doc], Preferences(max_char_length=20000))
     assert len(result) == 0
 
 
@@ -211,9 +211,9 @@ def test_filter_keeps_overly_long_academic():
         source_id="1",
         content_type="academic_pdf",
         raw_text="A" * 50000,
-        metadata={"title": "Long Academic Document"},
+        title="Long Academic Document",
     )
-    result = func([doc], {"max_char_length": 20000})
+    result = func([doc], Preferences(max_char_length=20000))
     assert len(result) == 1
 
 
@@ -227,7 +227,7 @@ def test_filter_keeps_malformed():
         source_id="1",
         content_type="rss",
         raw_text="A" * 900 + "\x00\x01\x02 \U0001f600 malformed data",
-        metadata={},  # Malformed, no title
+        # Malformed: no title
     )
-    result = func([doc], {"blacklist_words": ["badword"]})
+    result = func([doc], Preferences(blacklist_words=["badword"]))
     assert len(result) == 1

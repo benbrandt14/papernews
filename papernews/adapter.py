@@ -1,4 +1,11 @@
-from papernews.models import ArticleChunk
+"""Stage 4 bridge: flattens pipeline models into Jinja template variables.
+
+This is the single serialization point between the typed backend and the
+bespoke Typst template. The template never reads Pydantic models directly;
+everything it consumes is produced here.
+"""
+
+from papernews.models import ArticleChunk, RenderContext
 
 
 def article_to_dict(chunk: ArticleChunk) -> dict:
@@ -18,3 +25,25 @@ def article_to_dict(chunk: ArticleChunk) -> dict:
         data["telemetry"]["formatted_cost"] = chunk.telemetry.formatted_cost
 
     return data
+
+
+def render_context_to_template_vars(ctx: RenderContext) -> dict:
+    """Flatten a RenderContext into the variables template.typ.j2 expects.
+
+    The template's `decorations` block mixes front-page decorations with
+    run metadata (generation time, token/cost totals); this is where that
+    template-facing shape is assembled.
+    """
+    decorations = ctx.decorations.model_dump()
+    decorations.update(
+        generation_time=ctx.generation_time,
+        total_tokens=ctx.total_tokens,
+        total_cost=ctx.total_cost,
+    )
+
+    return {
+        "date": ctx.date,
+        "articles": [article_to_dict(a) for a in ctx.articles],
+        "decorations": decorations,
+        "lead_article_index": ctx.lead_article_index,
+    }

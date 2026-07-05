@@ -4,13 +4,14 @@ import requests
 from bs4 import BeautifulSoup
 from prefect import get_run_logger
 
-from papernews.models import FrontpageDecorations
+from papernews.config import AppConfig
+from papernews.models import FrontpageDecorations, Quote
 
 hookimpl = pluggy.HookimplMarker("papernews")
 
 
 @hookimpl
-def fetch_decorations(source_config: dict) -> FrontpageDecorations:
+def fetch_decorations(source_config: AppConfig) -> FrontpageDecorations:
     logger = get_run_logger()
     logger.info("Decoration Plugin: Scraping Wikipedia Current Events...")
     bullets = []
@@ -40,7 +41,14 @@ def fetch_decorations(source_config: dict) -> FrontpageDecorations:
     except Exception as e:
         logger.error(f"Wiki Decorator Error: {e}")
 
+    # A proper quote-of-the-day fetcher arrives with the decorations
+    # restore; until then the house quote keeps the front page warm.
+    quote = Quote(
+        text="Benjamin you stop pickin' the bark off of that tree!",
+        author="Grandma Brandt",
+    )
+
     # Fall back to the model's default unavailable string if bullets is empty
     if bullets:
-        return FrontpageDecorations(world_news=bullets)
-    return FrontpageDecorations()
+        return FrontpageDecorations(world_news=bullets, quote=quote)
+    return FrontpageDecorations(quote=quote)

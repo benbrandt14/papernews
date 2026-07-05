@@ -4,6 +4,7 @@ import pkgutil
 import pytest
 
 import papernews.plugins
+from papernews.config import AppConfig
 from papernews.models import RawDocument
 
 
@@ -88,11 +89,17 @@ def test_plugin_network_failure(ingestion_plugin, mocker):
     # Mock trafilatura network failure
     mock_fetch = mocker.patch("trafilatura.fetch_url", return_value=None)
 
-    source_config = {
-        "source": [
-            {"kind": kind, "url": "http://fake.com", "category": "News", "limit": 2}
+    source_config = AppConfig(
+        sources=[
+            {
+                "name": "Test",
+                "kind": kind,
+                "url": "http://fake.com",
+                "category": "News",
+                "limit": 2,
+            }
         ]
-    }
+    )
 
     docs = mod.fetch_sources(source_config)
 
@@ -114,11 +121,17 @@ def test_plugin_successful_ingestion(ingestion_plugin, mocker):
         * 20,
     )
 
-    source_config = {
-        "source": [
-            {"kind": kind, "url": "http://fake.com", "category": "News", "limit": 2}
+    source_config = AppConfig(
+        sources=[
+            {
+                "name": "Test",
+                "kind": kind,
+                "url": "http://fake.com",
+                "category": "News",
+                "limit": 2,
+            }
         ]
-    }
+    )
 
     docs = mod.fetch_sources(source_config)
 
@@ -129,7 +142,8 @@ def test_plugin_successful_ingestion(ingestion_plugin, mocker):
         assert hasattr(doc, "raw_text")
         assert len(doc.raw_text) > 0
         assert doc.metadata is not None
-        assert "title" in doc.metadata
+        assert doc.title
+        assert doc.category == "News"
 
     mock_fetch.assert_called()
 
@@ -151,11 +165,17 @@ def test_plugin_extraction_failure(ingestion_plugin, mocker):
     mock_fetch = mocker.patch("trafilatura.fetch_url", return_value="<html></html>")
     mock_extract = mocker.patch("trafilatura.extract", return_value=None)
 
-    source_config = {
-        "source": [
-            {"kind": kind, "url": "http://fake.com", "category": "News", "limit": 2}
+    source_config = AppConfig(
+        sources=[
+            {
+                "name": "Test",
+                "kind": kind,
+                "url": "http://fake.com",
+                "category": "News",
+                "limit": 2,
+            }
         ]
-    }
+    )
 
     docs = mod.fetch_sources(source_config)
 
