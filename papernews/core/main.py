@@ -5,7 +5,6 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
-import pluggy
 from prefect import flow, task
 
 from papernews.config import AppConfig, Preferences, get_settings, load_config
@@ -21,7 +20,9 @@ from papernews.models import (
     RenderContext,
     Telemetry,
 )
+from papernews.plugins.registry import get_plugin_manager
 from papernews.render import build_pdf
+from papernews.store import SimpleStore
 
 # Drop raw URLs, short stubs, or noisy topics before any scoring happens.
 NOISE_PATTERNS = [
@@ -57,14 +58,7 @@ def get_human_time(dt: datetime) -> str:
 @task(name="Stage 1: Ingestion", retries=2, retry_delay_seconds=5)
 def stage1_ingestion(config: AppConfig) -> list[RawDocument]:
     """Dynamically loads all plugins and fetches RawDocuments."""
-    pm = pluggy.PluginManager("papernews")
-
-    # In a real app, you would load hookspecs and module plugins here
-    # For now, we manually register the RSS plugin module
-    from papernews.plugins import hn_plugin, rss_plugin
-
-    pm.register(rss_plugin)
-    pm.register(hn_plugin)
+    pm = get_plugin_manager()
 
     # pm.hook.fetch_sources returns a list of lists (one per plugin)
     plugin_results = pm.hook.fetch_sources(source_config=config)
@@ -218,13 +212,27 @@ def stage3_hybrid_construction(
     return processed_chunks, total_run_telemetry
 
 
+@task(name="Stage 3.5: Enrichment")
+def stage3_5_enrichment(
+    articles: list[ArticleChunk], config: AppConfig
+) -> list[ArticleChunk]:
+    """Whole-day, cross-article enrichment pass.
+
+    Plugins implementing `enrich_articles` see every surviving article at
+    once and attach sidecar data in place (annotations, entities, scores).
+    No built-in plugin implements it yet — this is the extension point the
+    salience/interlinking/marginalia features plug into.
+    """
+    pm = get_plugin_manager()
+    pm.hook.enrich_articles(
+        articles=articles, source_config=config, store=SimpleStore()
+    )
+    return articles
+
+
 @task(name="Stage 4B: Template Decorations")
 def stage4b_fetch_decorations(config: AppConfig) -> FrontpageDecorations:
-    pm = pluggy.PluginManager("papernews")
-
-    from papernews.plugins import wiki_plugin
-
-    pm.register(wiki_plugin)
+    pm = get_plugin_manager()
 
     # Execute hooks (returns a list of FrontpageDecorations models)
     results = pm.hook.fetch_decorations(source_config=config)
@@ -273,9 +281,11 @@ def run_papernews(config: AppConfig) -> Path:
         budgeted, config.preferences
     )
 
+    enriched = stage3_5_enrichment(article_chunks, config)
+
     decorations = stage4b_fetch_decorations(config)
 
-    pdf_path = stage5_bespoke_render(article_chunks, total_telemetry, decorations)
+    pdf_path = stage5_bespoke_render(enriched, total_telemetry, decorations)
 
     return pdf_path
 
