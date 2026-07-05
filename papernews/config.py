@@ -95,6 +95,10 @@ class Settings(BaseSettings):
     llm_enabled: bool = False
     llm_backend: Literal["gemini", "local"] = "gemini"
     llm_model: str = "gemini-2.5-flash"
+    # Render article bodies via the structured markdown IR + typed emitter
+    # instead of the legacy NUL-sentinel regex path. Off until the IR path
+    # has proven parity in production.
+    use_ir_renderer: bool = False
 
 
 def get_settings() -> Settings:

@@ -90,6 +90,53 @@ class FrontpageDecorations(BaseModel):
     )
 
 
+class Span(BaseModel):
+    """Inline formatting/annotation over Block.text char offsets."""
+
+    start: int
+    end: int
+    kind: Literal[
+        "strong", "emph", "link", "code_inline", "math_inline", "entity", "salience"
+    ]
+    weight: float | None = None  # salience 0..1 → font weight/luma bucket
+    href: str | None = None  # link URL, or "#label" for internal targets
+    label: str | None = None  # entity id / Typst label
+
+
+class ImageRef(BaseModel):
+    alt: str = ""
+    url: str
+
+
+class Block(BaseModel):
+    """One structural unit of an article body (the markdown IR)."""
+
+    kind: Literal[
+        "para", "heading", "quote", "code", "math_display", "image", "list_item"
+    ]
+    level: int = 0  # heading depth / list nesting
+    text: str = ""  # plain text, no markdown, no Typst
+    spans: list[Span] = Field(default_factory=list)
+    raw: str = ""  # verbatim payload for code / math_display
+    images: list[ImageRef] = Field(default_factory=list)
+
+
+class EntityRef(BaseModel):
+    surface: str
+    label: str
+    wikidata_id: str | None = None
+    glossary_note: str | None = None
+
+
+class Enrichment(BaseModel):
+    """Sidecar data attached by Stage 3.5 enrichment plugins."""
+
+    entities: list[EntityRef] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    comments: list[Annotation] = Field(default_factory=list)
+    topics: list[str] = Field(default_factory=list)
+
+
 class ArticleChunk(BaseModel):
     content_type: Literal["rss", "academic_pdf", "wiki_event", "wiki_quote"] = "rss"
     category: str
@@ -103,6 +150,10 @@ class ArticleChunk(BaseModel):
     relative_time: str = ""
     telemetry: Telemetry = Field(default_factory=Telemetry)
     annotations: list[Annotation] = Field(default_factory=list)
+    # Structured body (markdown IR). When non-empty, the renderer uses the
+    # typed emitter instead of the legacy typst_body regex path.
+    blocks: list[Block] = Field(default_factory=list)
+    enrichment: Enrichment = Field(default_factory=Enrichment)
 
 
 class RenderContext(BaseModel):

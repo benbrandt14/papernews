@@ -22,6 +22,15 @@
   spacing: 0.6em
 )
 
+// Salience weighting (structured-IR bodies): high-salience sentences get
+// a heavier weight, boilerplate fades toward grey. E-Ink safe: never
+// lighter than 40% luma.
+#let smart-sentence(weight: 1.0, body) = {
+  if weight >= 0.75 { text(weight: "semibold", body) }
+  else if weight <= 0.25 { text(fill: luma(40%), body) }
+  else { body }
+}
+
 // Magazine typography
 #let sourcelabel(content) = text(size: 0.85em, tracking: 0.05em, smallcaps(content))
 
@@ -177,10 +186,18 @@
 
   ((* if art.body_markdown | length > 2000 *))
     #columns(2, gutter: 1.5em)[
+      ((* if art.body_typst *))
+      ((( art.body_typst )))
+      ((* else *))
       ((( art.body_markdown | typst_body )))
+      ((* endif *))
     ]
   ((* else *))
+    ((* if art.body_typst *))
+    ((( art.body_typst )))
+    ((* else *))
     ((( art.body_markdown | typst_body )))
+    ((* endif *))
   ((* endif *))
 
   // Force long articles to break to a new page so the next article starts fresh
