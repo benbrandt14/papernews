@@ -24,6 +24,18 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
+      - name: Formatting Check
+        run: uv run ruff format --check --output-format=concise
+
+      - name: Linting Check
+        run: uv run ruff check --output-format=concise
+
+      - name: Import Smoke (every shipped module must import)
+        env:
+          PAPERNEWS_NO_SCHED: "1"
+          GEMINI_API_KEY: "dummy-key-for-ci"
+        run: uv run python -c "import papernews.serve, papernews.core.main, papernews.__main__"
+
       - name: The Test Gauntlet
         env:
           PREFECT_TEST_MODE: "true"
@@ -32,11 +44,44 @@ jobs:
           GEMINI_API_KEY: "dummy-key-for-ci"
         run: uv run pytest tests/ -n auto -q --tb=short --disable-warnings
 
-      - name: Formatting Check
-        run: uv run ruff format --check --output-format=concise
-
-      - name: Linting Check
-        run: uv run ruff check --output-format=concise
-
       - name: Type Checking
         run: uv run mypy papernews/
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t papernews:ci .
+
+      - name: Boot container and probe endpoints
+        run: |
+          docker run -d --name papernews-ci \
+            -e PAPERNEWS_NO_SCHED=1 \
+            -e GEMINI_API_KEY=dummy-key-for-ci \
+            -p 8000:8000 papernews:ci
+
+          # Wait for the server to come up.
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/healthz > /dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://localhost:8000/healthz
+          curl -fsS http://localhost:8000/sources
+
+          # No edition built yet: /digest.pdf must 404 cleanly, not crash.
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/digest.pdf)
+          test "$code" = "404"
+
+          # GET /ingest returns the friendly 405 hint.
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/ingest)
+          test "$code" = "405"
+
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker logs papernews-ci || true

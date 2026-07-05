@@ -1,10 +1,13 @@
 # papernews/store.py
+import os
 import sqlite3
 from pathlib import Path
 
 
 class SimpleStore:
-    def __init__(self, db_path: str = "data/state.db"):
+    def __init__(self, db_path: str | None = None):
+        if db_path is None:
+            db_path = os.environ.get("PAPERNEWS_STATE", "data/state.db")
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 

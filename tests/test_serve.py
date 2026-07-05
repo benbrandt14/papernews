@@ -1,12 +1,12 @@
-"""Tests for the changes that addressed issue #1.
+"""Tests for the FastAPI serving layer (papernews/serve.py).
 
-These tests intentionally avoid touching the network, the Anthropic SDK, or
-Typst. They cover the four user-visible features added in that issue:
+These tests avoid the network, the LLM, Prefect, and Typst. They cover:
 
     1. INGEST_SCHEDULE cron-style scheduling
     2. INGEST_INTERVAL_SECONDS fallback when no schedule is set
     3. GET /ingest returns a 405 with a helpful JSON hint
     4. POST_INGEST_HOOK fires after a successful ingest
+    5. /healthz (shallow + deep), /digest.pdf, /sources behavior
 """
 
 from __future__ import annotations
@@ -18,18 +18,15 @@ import pytest
 
 # Make sure the background scheduler does not actually start during import.
 os.environ.setdefault("PAPERNEWS_NO_SCHED", "1")
-os.environ.setdefault("PAPERNEWS_STATE", "/tmp/papernews-tests-state.db")
-os.environ.setdefault("PAPERNEWS_CACHE", "/tmp/papernews-tests-cache")
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+import papernews.serve as serve  # noqa: E402
 
 
-def _fresh_scheduler():
-    """Re-import start_scheduler so it picks up the current env vars."""
-    from importlib import reload
-
-    import papernews.web as web
-
-    reload(web)
-    return web.start_scheduler()
+@pytest.fixture
+def client():
+    return TestClient(serve.app)
 
 
 # --- 1 & 2: scheduler modes -----------------------------------------------
@@ -45,7 +42,7 @@ def clean_scheduler_env(monkeypatch):
 def test_cron_schedule_creates_one_job_per_time(clean_scheduler_env, monkeypatch):
     monkeypatch.setenv("INGEST_SCHEDULE", "07:00,18:30")
     monkeypatch.setenv("INGEST_TIMEZONE", "Europe/London")
-    sched = _fresh_scheduler()
+    sched = serve.start_scheduler()
     try:
         jobs = sched.get_jobs()
         assert len(jobs) == 2
@@ -68,7 +65,7 @@ def test_cron_ignores_malformed_entries_but_keeps_valid_ones(
     clean_scheduler_env, monkeypatch
 ):
     monkeypatch.setenv("INGEST_SCHEDULE", "07:00,not-a-time,18:00")
-    sched = _fresh_scheduler()
+    sched = serve.start_scheduler()
     try:
         jobs = sched.get_jobs()
         assert len(jobs) == 2, "malformed entry must be skipped"
@@ -78,7 +75,7 @@ def test_cron_ignores_malformed_entries_but_keeps_valid_ones(
 
 def test_interval_fallback_when_no_schedule(clean_scheduler_env, monkeypatch):
     monkeypatch.setenv("INGEST_INTERVAL_SECONDS", "60")
-    sched = _fresh_scheduler()
+    sched = serve.start_scheduler()
     try:
         jobs = sched.get_jobs()
         assert len(jobs) == 1
@@ -91,17 +88,29 @@ def test_interval_fallback_when_no_schedule(clean_scheduler_env, monkeypatch):
 # --- 3: GET /ingest helper -------------------------------------------------
 
 
-def test_get_ingest_returns_helpful_405():
-    from papernews.web import app
-
-    client = app.test_client()
+def test_get_ingest_returns_helpful_405(client):
     r = client.get("/ingest")
     assert r.status_code == 405
-    body = r.get_json()
+    body = r.json()
     assert "error" in body
     assert "POST" in body["error"]
     assert "hint" in body
     assert "curl" in body["hint"].lower()
+
+
+def test_post_ingest_starts_background_run(client, mocker):
+    ran = mocker.patch.object(serve, "_do_ingest")
+    r = client.post("/ingest")
+    assert r.status_code == 202
+    assert r.json()["status"] == "started"
+    # The daemon thread targets the (mocked) ingest function.
+    import time
+
+    for _ in range(50):
+        if ran.called:
+            break
+        time.sleep(0.01)
+    ran.assert_called_once()
 
 
 # --- 4: POST_INGEST_HOOK ---------------------------------------------------
@@ -126,23 +135,14 @@ def hook_env(tmp_path, monkeypatch):
 def test_hook_runs_with_pdf_path_after_successful_ingest(hook_env, monkeypatch, mocker):
     tmp_path, fake_pdf, hook_log, hook = hook_env
     monkeypatch.setenv("POST_INGEST_HOOK", str(hook))
+    mocker.patch.object(serve, "_run_edition", return_value=fake_pdf)
 
-    from importlib import reload
-
-    import papernews.web as web
-
-    reload(web)
-
-    mocker.patch.object(web, "cmd_ingest", return_value=0)
-    mocker.patch.object(web, "_build_pdf_for_key", return_value=fake_pdf)
-    mocker.patch.object(web, "_load_sources", return_value=[])
-    mocker.patch.object(web, "Store", return_value=mocker.MagicMock())
-    mocker.patch.object(web, "_current_key", return_value="testkey")
-
-    web._do_ingest()
+    serve._do_ingest()
 
     assert hook_log.exists(), "hook script did not run"
     assert hook_log.read_text().strip() == str(fake_pdf)
+    assert serve._last_build["status"] == "ok"
+    assert serve._last_build["pdf"] == str(fake_pdf)
 
 
 def test_hook_failure_does_not_propagate(hook_env, monkeypatch, mocker):
@@ -151,34 +151,75 @@ def test_hook_failure_does_not_propagate(hook_env, monkeypatch, mocker):
     bad_hook.write_text("#!/usr/bin/env bash\nexit 1\n")
     bad_hook.chmod(bad_hook.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv("POST_INGEST_HOOK", str(bad_hook))
-
-    from importlib import reload
-
-    import papernews.web as web
-
-    reload(web)
-
-    mocker.patch.object(web, "cmd_ingest", return_value=0)
-    mocker.patch.object(web, "_build_pdf_for_key", return_value=fake_pdf)
-    mocker.patch.object(web, "_load_sources", return_value=[])
-    mocker.patch.object(web, "Store", return_value=mocker.MagicMock())
-    mocker.patch.object(web, "_current_key", return_value="testkey")
+    mocker.patch.object(serve, "_run_edition", return_value=fake_pdf)
 
     # Must not raise.
-    web._do_ingest()
+    serve._do_ingest()
+    assert serve._last_build["status"] == "ok"
 
 
 def test_no_hook_means_no_subprocess(hook_env, mocker):
-    from importlib import reload
+    _, fake_pdf, _, _ = hook_env
+    mocker.patch.object(serve, "_run_edition", return_value=fake_pdf)
+    fake_sub = mocker.patch.object(serve, "subprocess")
 
-    import papernews.web as web
-
-    reload(web)
-
-    mocker.patch.object(web, "cmd_ingest", return_value=0)
-    mocker.patch.object(web, "_load_sources", return_value=[])
-    mocker.patch.object(web, "Store", return_value=mocker.MagicMock())
-    fake_sub = mocker.patch.object(web, "subprocess")
-
-    web._do_ingest()
+    serve._do_ingest()
     fake_sub.run.assert_not_called()
+
+
+def test_failed_ingest_reports_error_status(hook_env, mocker):
+    mocker.patch.object(serve, "_run_edition", side_effect=RuntimeError("boom"))
+
+    # Must not raise.
+    serve._do_ingest()
+    assert serve._last_build["status"] == "error"
+    assert "boom" in serve._last_build["error"]
+
+
+# --- 5: routes --------------------------------------------------------------
+
+
+def test_healthz_shallow_and_deep(client):
+    r = client.get("/healthz")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
+
+    r = client.get("/healthz", params={"deep": 1})
+    assert r.status_code == 200
+    assert "last_build" in r.json()
+
+
+def test_digest_pdf_404_when_no_edition(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("PAPERNEWS_OUTPUT", str(tmp_path / "empty"))
+    r = client.get("/digest.pdf")
+    assert r.status_code == 404
+    assert "hint" in r.json()
+
+
+def test_digest_pdf_serves_newest_edition(client, tmp_path, monkeypatch):
+    out = tmp_path / "output"
+    out.mkdir()
+    older = out / "2026-01-01.pdf"
+    older.write_bytes(b"%PDF-old")
+    newer = out / "2026-01-02.pdf"
+    newer.write_bytes(b"%PDF-new")
+    os.utime(older, (1, 1))
+    monkeypatch.setenv("PAPERNEWS_OUTPUT", str(out))
+
+    r = client.get("/digest.pdf")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content == b"%PDF-new"
+
+
+def test_sources_lists_configured_sources(client, tmp_path, monkeypatch):
+    cfg = tmp_path / "sources.toml"
+    cfg.write_text(
+        '[[source]]\nname = "Example"\nkind = "rss"\nurl = "https://example.com/feed"\n'
+        'category = "Tech"\nlimit = 3\n'
+    )
+    monkeypatch.setenv("PAPERNEWS_CONFIG", str(cfg))
+
+    r = client.get("/sources")
+    assert r.status_code == 200
+    assert r.json()["sources"] == [{"name": "Example", "kind": "rss", "limit": 3}]

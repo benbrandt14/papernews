@@ -40,5 +40,7 @@ def fetch_decorations(source_config: dict) -> FrontpageDecorations:
     except Exception as e:
         logger.error(f"Wiki Decorator Error: {e}")
 
-    # Pydantic will fall back to the default unavailable string if bullets is empty
-    return FrontpageDecorations(world_news=bullets if bullets else None)
+    # Fall back to the model's default unavailable string if bullets is empty
+    if bullets:
+        return FrontpageDecorations(world_news=bullets)
+    return FrontpageDecorations()
