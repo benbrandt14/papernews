@@ -38,13 +38,14 @@ def llm_enabled(monkeypatch, test_db, mocker):
 
 
 def _mock_gemini(mocker, text: str, prompt_tokens: int, output_tokens: int):
+    """Mock at the Gemini client level so the real GeminiBackend code runs."""
     mock_response = mocker.MagicMock()
     mock_response.text = text
     mock_response.usage_metadata.prompt_token_count = prompt_tokens
     mock_response.usage_metadata.candidates_token_count = output_tokens
     client = mocker.MagicMock()
     client.models.generate_content.return_value = mock_response
-    mocker.patch("papernews.core.router._client", return_value=client)
+    mocker.patch("papernews.core.backends._gemini_client", return_value=client)
     return client
 
 

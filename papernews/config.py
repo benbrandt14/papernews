@@ -93,6 +93,7 @@ class Settings(BaseSettings):
     output: Path = Path("output")
     state: Path = Path("data/state.db")
     llm_enabled: bool = False
+    llm_backend: Literal["gemini", "local"] = "gemini"
     llm_model: str = "gemini-2.5-flash"
 
 

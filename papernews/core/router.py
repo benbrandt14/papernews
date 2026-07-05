@@ -2,11 +2,11 @@
 from collections.abc import Callable
 from functools import lru_cache
 
-from google import genai
-from google.genai import types
 from prefect import get_run_logger, task
+from pydantic import BaseModel
 
 from papernews.config import Preferences, get_settings
+from papernews.core.backends import get_backend
 from papernews.models import (
     LLMArticleSelection,
     LLMArticleSummary,
@@ -19,26 +19,9 @@ SUMMARY_INPUT_LENGTH = 1500
 
 
 @lru_cache(maxsize=1)
-def _client() -> genai.Client:
-    """Lazy Gemini client — importing this module must not require credentials."""
-    return genai.Client()
-
-
-@lru_cache(maxsize=1)
 def _db() -> SimpleStore:
     """Lazy store — importing this module must not create database files."""
     return SimpleStore()
-
-
-def _get_telemetry(response: types.GenerateContentResponse) -> Telemetry:
-    """Helper to safely extract tokens from a Gemini response."""
-    if response.usage_metadata:
-        return Telemetry(
-            prompt_tokens=response.usage_metadata.prompt_token_count or 0,
-            output_tokens=response.usage_metadata.candidates_token_count or 0,
-        )
-
-    return Telemetry()
 
 
 def _cached_structured_call(
@@ -46,38 +29,32 @@ def _cached_structured_call(
     contents: str,
     system_instruction: str,
     temperature: float,
-    schema: type | None = None,
+    schema: type[BaseModel] | None = None,
     transform: Callable[[str], str] = lambda s: s,
 ) -> tuple[str | None, Telemetry, bool]:
     """Shared skeleton for every LLM task: cache-check, call, cache-store.
 
     Returns (text, telemetry, cache_hit). `text` is None when the model
     produced no usable output. `transform` post-processes the raw model
-    text before it is cached (e.g. stripping markdown fences).
+    text before it is cached (e.g. stripping markdown fences). The cache
+    sits above the backend, so any backend benefits from it.
     """
     cached = _db().get_cache(cache_key)
     if cached is not None:
         return cached, Telemetry(), True
 
-    config = types.GenerateContentConfig(
-        system_instruction=system_instruction,
-        temperature=temperature,
-    )
+    backend = get_backend(get_settings())
     if schema is not None:
-        config.response_mime_type = "application/json"
-        config.response_schema = schema
+        raw, telemetry = backend.structured(
+            contents, system_instruction, temperature, schema
+        )
+    else:
+        raw, telemetry = backend.text(contents, system_instruction, temperature)
 
-    response = _client().models.generate_content(
-        model=get_settings().llm_model,
-        contents=contents,
-        config=config,
-    )
-    telemetry = _get_telemetry(response)
-
-    if not response.text:
+    if raw is None:
         return None, telemetry, False
 
-    text = transform(response.text)
+    text = transform(raw)
     _db().set_cache(cache_key, text)
     return text, telemetry, False
 
