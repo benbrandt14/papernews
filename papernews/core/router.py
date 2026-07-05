@@ -2,7 +2,10 @@
 from collections.abc import Callable
 from functools import lru_cache
 
+import requests
+from google.genai import errors as genai_errors
 from prefect import get_run_logger, task
+from prefect.context import TaskRunContext
 from pydantic import BaseModel
 
 from papernews.config import Preferences, get_settings
@@ -22,6 +25,34 @@ SUMMARY_INPUT_LENGTH = 1500
 def _db() -> SimpleStore:
     """Lazy store — importing this module must not create database files."""
     return SimpleStore()
+
+
+_TRANSIENT_CODES = {429, 500, 502, 503, 504}
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Errors worth retrying: network trouble and 5xx/429 API responses."""
+    if isinstance(exc, ConnectionError | TimeoutError | requests.RequestException):
+        return True
+    if isinstance(exc, genai_errors.ServerError):
+        return True
+    return getattr(exc, "code", None) in _TRANSIENT_CODES
+
+
+def _retries_remaining() -> bool:
+    """True while Prefect still has retry attempts left for this task run.
+
+    Transient errors are re-raised while retries remain (so Prefect's
+    retry policy actually fires) and only degrade to the task's fallback
+    on the final attempt. Outside a task run (unit tests calling .fn)
+    there is no retry loop, so this returns False.
+    """
+    ctx = TaskRunContext.get()
+    if ctx is None or ctx.task_run is None:
+        return False
+    retries = ctx.task.retries or 0
+    run_count = getattr(ctx.task_run, "run_count", 1) or 1
+    return run_count <= retries
 
 
 def _cached_structured_call(
@@ -93,6 +124,8 @@ def llm_select_article(doc: RawDocument, prefs: Preferences) -> tuple[bool, Tele
             return False, telemetry
         return LLMArticleSelection.model_validate_json(text).is_selected, telemetry
     except Exception as e:
+        if _is_transient(e) and _retries_remaining():
+            raise
         logger.error(f"Selection Error: {e}")
         return False, Telemetry()
 
@@ -122,6 +155,8 @@ def llm_summarize_article(doc: RawDocument) -> tuple[str, Telemetry]:
             return "Summary unavailable.", telemetry
         return LLMArticleSummary.model_validate_json(text).summary, telemetry
     except Exception as e:
+        if _is_transient(e) and _retries_remaining():
+            raise
         logger.error(f"Summarization Error: {e}")
         return "Summary unavailable.", Telemetry()
 
@@ -174,5 +209,7 @@ def llm_format_body(doc: RawDocument) -> tuple[str, Telemetry]:
             return doc.raw_text, telemetry
         return text, telemetry
     except Exception as e:
+        if _is_transient(e) and _retries_remaining():
+            raise
         logger.warning(f"Formatting Error, falling back to deterministic raw text: {e}")
         return doc.raw_text, Telemetry()
