@@ -207,6 +207,10 @@ def stage3_hybrid_construction(
             telemetry=article_telemetry,
             annotations=[],
         )
+        if get_settings().use_ir_renderer:
+            from papernews.markdown_ir import parse_markdown
+
+            chunk.blocks = parse_markdown(formatted_markdown)
         processed_chunks.append(chunk)
 
     return processed_chunks, total_run_telemetry

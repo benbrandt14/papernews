@@ -494,7 +494,19 @@ def build_pdf(ctx: RenderContext, out_dir: Path) -> Path:
 
     env = _env(tpl_dir, workdir)
     tpl = env.get_template("template.typ.j2")
-    typst_source = tpl.render(**render_context_to_template_vars(ctx))
+
+    template_vars = render_context_to_template_vars(ctx)
+    # Structured-IR bodies are emitted here because emission needs the
+    # workdir (image fetching). Lazy import: typst_emit uses this module's
+    # escape helpers.
+    if any(chunk.blocks for chunk in ctx.articles):
+        from papernews.typst_emit import emit_blocks
+
+        for chunk, art_dict in zip(ctx.articles, template_vars["articles"]):
+            if chunk.blocks:
+                art_dict["body_typst"] = emit_blocks(chunk.blocks, workdir)
+
+    typst_source = tpl.render(**template_vars)
 
     typst_path = workdir / f"{date}.typ"
     typst_path.write_text(typst_source, encoding="utf-8")
