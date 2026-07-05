@@ -39,7 +39,7 @@ _TYPST_REPLACE = {
 }
 
 
-def typst_escape(s) -> str:
+def typst_escape(s: object) -> str:
     if s is None:
         return ""
     res = "".join(_TYPST_REPLACE.get(c, c) for c in str(s))
@@ -191,7 +191,7 @@ def _stash_images(text: str, workdir: Path) -> tuple[str, list[str]]:
         out_str = ""
         current_valid_group: list[tuple[str, float, int]] = []
 
-        def flush_valid_group():
+        def flush_valid_group() -> None:
             nonlocal out_str
             if not current_valid_group:
                 return

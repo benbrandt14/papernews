@@ -11,6 +11,10 @@ on:
 jobs:
   gauntlet:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
 
     steps:
       - name: Checkout code
@@ -20,6 +24,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: uv sync --all-extras --dev
@@ -29,6 +34,16 @@ jobs:
 
       - name: Linting Check
         run: uv run ruff check --output-format=concise
+
+      # Typst fetches @preview packages (mitex + deps) from
+      # packages.typst.org during compile tests; cache them so a registry
+      # outage can't flake CI. Bump the key when the template's mitex
+      # version changes.
+      - name: Cache Typst packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/typst
+          key: typst-packages-mitex-0.2.4
 
       - name: Import Smoke (every shipped module must import)
         env:
@@ -42,7 +57,9 @@ jobs:
           PREFECT_SERVER_ALLOW_EPHEMERAL_MODE: "false"
           PREFECT_API_URL: ""
           GEMINI_API_KEY: "dummy-key-for-ci"
-        run: uv run pytest tests/ -n auto -q --tb=short --disable-warnings
+        run: >
+          uv run pytest tests/ -n auto -q --tb=short --disable-warnings
+          --cov=papernews --cov-report=term --cov-fail-under=75
 
       - name: Type Checking
         run: uv run mypy papernews/

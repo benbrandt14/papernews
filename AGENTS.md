@@ -4,43 +4,52 @@
 This document defines the architectural invariants, technology stack guidelines, and operational boundaries for the Papernews repository. All code generation, refactoring, and architectural suggestions must strictly adhere to these constraints.
 
 ## 2. Architectural Invariants: Separation of Concerns
-Papernews enforces a strict boundary between data processing and presentation. 
+Papernews enforces a strict boundary between data processing and presentation.
 
-* **The Backend (Python/Prefect):** Must remain generic, deterministic, and strictly typed via Pydantic. It handles ingestion, routing, and filtering.
-* **The Frontend (Jinja/Typst):** Must remain bespoke and deeply opinionated. It handles typography, layout, and visual rendering.
-* **The Bridge (Stage 4 Adapter):** The backend and frontend communicate exclusively through a data adapter that converts modern Pydantic models into the legacy dictionary structures expected by the Jinja template. 
-* **Constraint:** Do not attempt to unify the frontend and backend. Do not propose replacing Jinja templates with programmatic Python-Typst generation loops.
+* **The Backend (Python/Prefect):** Must remain generic, deterministic, and strictly typed via Pydantic. It handles ingestion, routing, filtering, and enrichment.
+* **The Frontend (Jinja/Typst):** Must remain bespoke and deeply opinionated. Page layout, font selection, and column generation live exclusively in `papernews/template.typ.j2`.
+* **The Bridge:** Backend and frontend communicate exclusively through `RenderContext` (models.py) flattened by `papernews/adapter.py` (`render_context_to_template_vars`) — the single serialization point. The template never reads Pydantic models directly.
+* **Inline body emission** is the one sanctioned exception to "no Typst in Python": `papernews/typst_emit.py` emits article bodies from the typed markdown IR (`Block`/`Span`). Layout still belongs to the template; the emitter only produces inline/body markup.
 
 ## 3. Technology Stack & Best Practices
 
+### Configuration
+* `sources.toml` loads through `papernews/config.py` into strict Pydantic models (`extra="forbid"`); unknown keys and `[category_limits]` entries matching no source category fail at load time. Never bypass `load_config`.
+* Process-level switches are `PAPERNEWS_*` env vars via `Settings` (llm_enabled, llm_backend, use_ir_renderer, paths).
+
 ### Python & Prefect (Orchestration & Data Flow)
-* **Idempotency & Resiliency:** Wrap all external network requests (RSS fetching, API calls) and LLM invocations in Prefect `@task` decorators with explicit retry policies (e.g., `@task(retries=3)` for `503` errors).
-* **State Management:** Assume pipeline interruptions. Persist state changes incrementally to the SQLite database (`state.db`) so the pipeline can resume without duplicating API costs.
-* **Strict Typing:** All data flowing through the pipeline must be validated by Pydantic schemas (`RawDocument`, `ArticleChunk`, `Telemetry`).
+* **Idempotency & Resiliency:** Wrap external network requests and LLM invocations in Prefect `@task` decorators with explicit retry policies. Transient errors must propagate so retries actually fire; degrade to fallbacks only on the final attempt.
+* **State Management:** Persist state incrementally to SQLite (`SimpleStore`). Schema changes are append-only entries in `store.MIGRATIONS` (tracked via `PRAGMA user_version`); never edit or reorder a shipped migration.
+* **Strict Typing:** All data flowing through the pipeline is validated by Pydantic (`RawDocument`, `ArticleChunk`, `Telemetry`, `RenderContext`). Tasks must not mutate their inputs; return updated copies (`model_copy`).
 
-### LLM Integration (Google GenAI)
-* **Function-as-a-Service:** Treat the LLM strictly as an isolated text-processing function. Its scope is limited to:
-  1. Gatekeeping (Boolean classification).
-  2. Summarization (Text reduction).
-  3. Formatting (Markdown sanitization).
-* **Data Determinism:** Do not pass deterministic metadata (URLs, timestamps, author names) to the LLM with instructions to return them in a JSON schema. Manage all deterministic data natively in Python and map it directly to the output models.
-* **Immutable Telemetry:** Token usage and cost tracking are first-class requirements. Every LLM invocation must return a populated `Telemetry` object. Aggregate telemetry data cumulatively, ensuring rejected documents still attribute their token costs to the run total.
+### LLM Integration (Backends)
+* All model calls go through the `LLMBackend` protocol (`papernews/core/backends.py`) — Gemini by default, Ollama via `PAPERNEWS_LLM_BACKEND=local`. The SQLite response cache sits above the backend in `router._cached_structured_call`; backends stay dumb transport wrappers.
+* **Function-as-a-Service:** The LLM's scope is limited to gatekeeping (boolean classification), summarization, and markdown formatting.
+* **Data Determinism:** Do not pass deterministic metadata (URLs, timestamps, authors) to the LLM to echo back. Manage deterministic data natively in Python.
+* **Immutable Telemetry:** Every LLM invocation returns a populated `Telemetry`; aggregate cumulatively, attributing rejected documents' costs to the run total.
 
-### RSS & Data Ingestion (Pluggy & Trafilatura)
-* **Plugin Architecture:** Implement new data sources (e.g., Hacker News, Academic feeds, Reddit) as decoupled `pluggy` modules. 
-* **Standardized Output:** All ingestion plugins must yield `RawDocument` models.
-* **Extraction:** When scraping HTML, use `trafilatura`. Ensure parameters `include_images=True` and `include_links=True` are strictly maintained to preserve source context.
-* **Cost Control (The Triage Funnel):** Never bypass the Python-native Triage Funnel (Stage 2). All ingested documents must pass through deterministic local filters (regex blacklists, source limits, ranking heuristics) before being sent to the LLM API. 
+### Ingestion & Plugins (pluggy)
+* The plugin contract is explicit: `papernews/plugins/hookspecs.py` declares `fetch_sources`, `enrich_articles`, and `fetch_decorations`; managers are built only via `plugins/registry.get_plugin_manager()`.
+* New data sources are `fetch_sources` plugins yielding `RawDocument`s (typed fields `title`/`category`/`published` populated; `metadata` only for genuine extras).
+* Cross-article features (salience, entities, marginalia, curiosity queue) are `enrich_articles` plugins: they see the whole day's `ArticleChunk`s at Stage 3.5 and attach sidecar data in place (`blocks` spans, `enrichment`, `annotations`).
+* When scraping HTML, use `trafilatura` with `include_images=True` and `include_links=True` strictly maintained.
+* **Cost Control (The Triage Funnel):** Never bypass Stage 2. All documents pass deterministic local filters (noise regexes, blacklists, ranking, category limits) before the LLM.
 
-### Typst & Jinja (Presentation Layer)
-* **Template Immutability:** Layout logic, font selection, and column generation reside exclusively in `papernews/template.typ.j2`. Do not migrate layout logic into Python strings.
-* **Compilation Safety:** Typst compilation is fragile when exposed to raw scraped web text. The custom regex pipeline (`_stash_typography`, `_stash_math`, `_stash_images`) in `render.py` acts as a critical safety net. 
-* **Constraint:** Do not modify the stashing regex pipeline unless specifically directed to fix a targeted rendering bug (e.g., unbalanced brackets, malformed LaTeX). Fallback to raw text (`doc.raw_text`) gracefully if a Markdown formatting exception occurs.
+### Rendering (IR + Typst)
+* Article bodies flow through the markdown IR: `markdown_ir.parse_markdown` (pure; plain text + char-offset `Span`s) → enrichers → `typst_emit.emit_blocks` (escapes exactly once, no sentinel tokens). Enrichers operate on `Block.text` offsets and must never see markdown or Typst.
+* The legacy `typst_body` regex path in `render.py` is a deprecated fallback (`PAPERNEWS_USE_IR_RENDERER=0`); do not extend it — new inline constructs are new `Span`/`Block` kinds plus an emitter case.
+* `build_pdf` raises `RenderError` on Typst compile failure; never swallow it.
 
-## 4. The 5-Stage Pipeline Reference
+## 4. The Pipeline Reference
 Any new feature must map cleanly to one of the following stages:
-1. **Ingestion:** (`pluggy`, `trafilatura`) -> Outputs `RawDocument`.
-2. **Triage Funnel:** Python-native deterministic filtering -> Zero API cost.
-3. **LLM Gateway:** Gemini API routing -> Outputs validated `ArticleChunk` & `Telemetry`.
-4. **Legacy Adapter:** Converts Pydantic models to Jinja-compatible `dict`.
-5. **Renderer:** Jinja templating -> Typst PDF compilation.
+1. **Ingestion** (pluggy `fetch_sources`) → `RawDocument`.
+2. **Triage Funnel** — deterministic filtering/ranking/budget, zero API cost.
+3. **LLM Gateway** — backend-routed select/summarize/format → validated `ArticleChunk` & `Telemetry`.
+3.5. **Enrichment** (pluggy `enrich_articles`) — whole-day cross-article sidecar data.
+4. **Decorations** (pluggy `fetch_decorations`) → `FrontpageDecorations`.
+5. **Adapter → Renderer** — `RenderContext` → template vars → Typst PDF.
+
+## 5. Testing Bar
+* Every change lands with tests; CI runs pytest (with Hypothesis + the regression corpus and real Typst compilation), ruff format/check, mypy, an import smoke, and a Docker build/boot smoke.
+* New render-path behavior must be pinned by golden fragments and survive the hostile-string gauntlet and property fuzz.
+* Grow the regression corpus (`tests/fixtures/test_db.json`) whenever a real-world input breaks rendering.

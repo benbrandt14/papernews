@@ -37,22 +37,30 @@ dev = [
     "pytest-mock>=3.14",
     "pytest-xdist>=3.8.0",
     "hypothesis>=6.155.7",
-    "httpx>=0.27",  # FastAPI TestClient transport
+    "httpx>=0.27", # FastAPI TestClient transport
     "ruff>=0.15.20",
+    "pytest-cov>=7.1.0",
 ]
+
+[tool.coverage.run]
+# wiki.py is legacy harvest material for the decorations restore; it is
+# deleted (not covered) once its parsers move into the wiki plugin.
+omit = ["papernews/wiki.py"]
 
 [tool.ruff]
 # Enable Pyflakes (F), pycodestyle (E), isort (I), and pyupgrade (UP)
 lint.select = ["E", "F", "I", "UP"]
-lint.ignore = ["E501", "E402", "F841", "E722"]
+lint.ignore = ["E501", "E402"]
 
 [tool.mypy]
 # Global options:
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = [
-    "papernews.core.*",
-    "papernews.models",
-]
+module = ["papernews.*"]
 disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+# Legacy harvest material, deleted with the decorations restore.
+module = ["papernews.wiki"]
+disallow_untyped_defs = false

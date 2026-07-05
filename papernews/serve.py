@@ -36,7 +36,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from papernews.config import AppConfig, load_config
@@ -134,17 +134,17 @@ def create_app() -> FastAPI:
     app = FastAPI(title="papernews", docs_url=None, redoc_url=None)
 
     @app.get("/healthz")
-    def healthz(deep: int = 0):
+    def healthz(deep: int = 0) -> JSONResponse:
         if deep:
             return JSONResponse({"status": "ok", "last_build": _last_build})
         return JSONResponse({"status": "ok"})
 
     @app.get("/", response_class=HTMLResponse)
-    def index():
+    def index() -> str:
         return _LANDING_HTML
 
     @app.get("/sources")
-    def sources_endpoint():
+    def sources_endpoint() -> JSONResponse:
         cfg = _load_config()
         return JSONResponse(
             {
@@ -156,7 +156,7 @@ def create_app() -> FastAPI:
         )
 
     @app.get("/digest.pdf")
-    def digest_pdf():
+    def digest_pdf() -> Response:
         pdf = _latest_pdf()
         if pdf is None:
             return JSONResponse(
@@ -175,7 +175,7 @@ def create_app() -> FastAPI:
         )
 
     @app.get("/preview.png")
-    def preview_png():
+    def preview_png() -> Response:
         pdf = _latest_pdf()
         if pdf is None:
             return JSONResponse({"error": "no edition built yet"}, status_code=404)
@@ -187,7 +187,7 @@ def create_app() -> FastAPI:
         )
 
     @app.post("/ingest")
-    def trigger_ingest():
+    def trigger_ingest() -> JSONResponse:
         # Optional manual kick; for cron-style external triggers.
         if _ingest_lock.locked():
             return JSONResponse({"status": "already running"}, status_code=202)
@@ -195,7 +195,7 @@ def create_app() -> FastAPI:
         return JSONResponse({"status": "started"}, status_code=202)
 
     @app.get("/ingest")
-    def ingest_get_hint():
+    def ingest_get_hint() -> JSONResponse:
         # Friendly 405 — easier than rediscovering you wanted POST.
         return JSONResponse(
             {
