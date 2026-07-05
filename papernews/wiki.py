@@ -262,7 +262,7 @@ def summarize_world_news(items: list[dict]) -> list[dict]:
                 max_output_tokens=150 * len(items),
             ),
         )
-        text = response.text
+        text = response.text or ""
     except Exception:
         return items
 

@@ -18,12 +18,12 @@ client = genai.Client()
 db = SimpleStore()
 
 
-def _get_telemetry(response) -> Telemetry:
+def _get_telemetry(response: types.GenerateContentResponse) -> Telemetry:
     """Helper to safely extract tokens from a Gemini response."""
     if response.usage_metadata:
         return Telemetry(
-            prompt_tokens=response.usage_metadata.prompt_token_count,
-            output_tokens=response.usage_metadata.candidates_token_count,
+            prompt_tokens=response.usage_metadata.prompt_token_count or 0,
+            output_tokens=response.usage_metadata.candidates_token_count or 0,
         )
 
     return Telemetry()
@@ -35,7 +35,9 @@ def llm_select_article(doc: RawDocument, prefs: dict) -> tuple[bool, Telemetry]:
     logger = get_run_logger()
 
     if not LLM_ENABLE:
-        logger.info(f"--no-llm: Auto-accept {doc.metadata.get('title')[:30]}...")
+        logger.info(
+            f"--no-llm: Auto-accept {doc.metadata.get('title', 'Unknown Title')[:30]}..."
+        )
         return True, Telemetry()
 
     cache_key = f"select_{doc.source_id}"
@@ -43,7 +45,9 @@ def llm_select_article(doc: RawDocument, prefs: dict) -> tuple[bool, Telemetry]:
     # 1. Check Cache
     cached_json = db.get_cache(cache_key)
     if cached_json:
-        logger.info(f"Cache Hit: Selection for '{doc.metadata.get('title')[:30]}...'")
+        logger.info(
+            f"Cache Hit: Selection for '{doc.metadata.get('title', 'Unknown Title')[:30]}...'"
+        )
         return (
             LLMArticleSelection.model_validate_json(cached_json).is_selected,
             Telemetry(),
@@ -93,7 +97,9 @@ def llm_summarize_article(doc: RawDocument) -> tuple[str, Telemetry]:
     logger = get_run_logger()
 
     if not LLM_ENABLE:
-        logger.info(f"--no-llm: Auto-accept {doc.metadata.get('title')[:30]}...")
+        logger.info(
+            f"--no-llm: Auto-accept {doc.metadata.get('title', 'Unknown Title')[:30]}..."
+        )
         return "Summarization Disabled..", Telemetry()
 
     cache_key = f"summary_{doc.source_id}"
@@ -101,7 +107,9 @@ def llm_summarize_article(doc: RawDocument) -> tuple[str, Telemetry]:
     # 1. Check Cache
     cached_json = db.get_cache(cache_key)
     if cached_json:
-        logger.info(f"Cache Hit: Summary for '{doc.metadata.get('title')[:30]}...'")
+        logger.info(
+            f"Cache Hit: Summary for '{doc.metadata.get('title', 'Unknown Title')[:30]}...'"
+        )
         return LLMArticleSummary.model_validate_json(cached_json).summary, Telemetry()
 
     title = doc.metadata.get("title", "Unknown Title")
@@ -144,7 +152,9 @@ def llm_format_body(doc: RawDocument) -> tuple[str, Telemetry]:
     logger = get_run_logger()
 
     if not LLM_ENABLE:
-        logger.info(f"--no-llm: Auto-accept {doc.metadata.get('title')[:30]}...")
+        logger.info(
+            f"--no-llm: Auto-accept {doc.metadata.get('title', 'Unknown Title')[:30]}..."
+        )
         return doc.raw_text, Telemetry()
 
     cache_key = f"format_{doc.source_id}"

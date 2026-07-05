@@ -32,8 +32,7 @@ def fetch_sources(source_config: dict) -> list[RawDocument]:
         min_points = src.get("min_points", 50)
 
         since = int(time.time() - since_hours * 3600)
-        since = int(time.time() - since_hours * 3600)
-        params = {
+        params: dict[str, str | int | list[str]] = {
             "tags": "story",
             # Pass as a list so 'requests' parses it as &numericFilters=X&numericFilters=Y
             "numericFilters": [f"created_at_i>{since}", f"points>{min_points}"],

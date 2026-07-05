@@ -135,7 +135,7 @@ def triage_process_c_budget(
     """
     default_limit = prefs.get("default_category_limit", 1)
     surviving_docs = []
-    category_counts = {}
+    category_counts: dict[str, int] = {}
 
     for doc in documents:
         cat = doc.metadata.get("category", "Uncategorized")
@@ -237,10 +237,10 @@ def stage4b_fetch_decorations(source_config: dict) -> dict:
 
 @task(name="Stage 5: Bespoke Renderer")
 def stage5_bespoke_render(
-    articles: list[ArticleChunk], total_telemetry: Telemetry, decorations
+    articles: list[ArticleChunk], total_telemetry: Telemetry, decorations: dict
 ) -> Path:
-    out_dir = Path(os.getcwd()) / "output"
-    out_dir.mkdir(exist_ok=True)
+    out_dir = Path(os.environ.get("PAPERNEWS_OUTPUT", "output"))
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     today_str = date.today().strftime("%Y-%m-%d")
 
@@ -268,7 +268,7 @@ def stage5_bespoke_render(
 
 
 @flow(name="Papernews Processing Flow", log_prints=True)
-def run_papernews(source_config: dict):
+def run_papernews(source_config: dict) -> Path:
     # Extract Configs
     prefs = source_config.get("preferences", {})
     limits = source_config.get("category_limits", {})

@@ -55,7 +55,7 @@ docker compose up --build -d
 The application exposes a web server at `http://localhost:8000`.
 
 * To trigger a new compilation pipeline run, send a request to the `/ingest` endpoint.
-* State (SQLite) and PDF outputs live in `./data/state.db` and `./output/` (bind-mounted from the host).
+* State (SQLite) and PDF outputs live in `./data/state.db` and `./data/output/` (bind-mounted from the host).
 * **Resetting State:** To perform a hard reset, simply delete `data/state.db` and restart the container. The database schema will automatically rebuild on boot.
 
 
