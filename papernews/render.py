@@ -10,7 +10,17 @@ from pathlib import Path
 import jinja2
 from PIL import Image
 
-from .models import ArticleChunk
+from .adapter import render_context_to_template_vars
+from .models import RenderContext
+
+
+class RenderError(RuntimeError):
+    """Typst compilation failed. `debug_path` points at diagnostics, if any."""
+
+    def __init__(self, message: str, debug_path: Path | None = None):
+        super().__init__(message)
+        self.debug_path = debug_path
+
 
 _TYPST_REPLACE = {
     "\\": r"\\",
@@ -471,21 +481,20 @@ def _env(tpl_dir: Path, workdir: Path) -> jinja2.Environment:
     return env
 
 
-def build_pdf(
-    date: str,
-    articles: list[ArticleChunk],
-    out_dir: Path,
-    decorations: dict | None = None,
-) -> Path:
+def build_pdf(ctx: RenderContext, out_dir: Path) -> Path:
+    """Render the edition described by `ctx` to a PDF in `out_dir`.
+
+    Raises RenderError when Typst compilation fails (after writing
+    diagnostics to the .build workdir).
+    """
+    date = ctx.date
     tpl_dir = Path(__file__).parent
     workdir = out_dir / ".build"
     workdir.mkdir(parents=True, exist_ok=True)
 
     env = _env(tpl_dir, workdir)
     tpl = env.get_template("template.typ.j2")
-    typst_source = tpl.render(
-        date=date, articles=articles, decorations=decorations or {}
-    )
+    typst_source = tpl.render(**render_context_to_template_vars(ctx))
 
     typst_path = workdir / f"{date}.typ"
     typst_path.write_text(typst_source, encoding="utf-8")
@@ -502,6 +511,7 @@ def build_pdf(
         sys.stderr.write("=" * 70 + "\n")
         sys.stderr.write(f"Error Message: {e}\n\n")
 
+        debug_path: Path | None = None
         lines = typst_source.split("\n")
         line_match = re.search(r"line (\d+)", str(e), re.IGNORECASE)
         if not line_match:
@@ -534,5 +544,8 @@ def build_pdf(
             sys.stderr.write(f"--> {debug_path}\n")
 
         sys.stderr.write("=" * 70 + "\n")
+        raise RenderError(
+            f"Typst compilation failed for {date}: {e}", debug_path=debug_path
+        ) from e
 
     return pdf_dst

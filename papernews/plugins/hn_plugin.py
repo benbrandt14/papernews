@@ -5,6 +5,7 @@ import requests
 import trafilatura
 from prefect import get_run_logger
 
+from papernews.config import AppConfig
 from papernews.models import RawDocument
 
 hookimpl = pluggy.HookimplMarker("papernews")
@@ -13,29 +14,24 @@ _HN_SEARCH = "https://hn.algolia.com/api/v1/search"
 
 
 @hookimpl
-def fetch_sources(source_config: dict) -> list[RawDocument]:
+def fetch_sources(source_config: AppConfig) -> list[RawDocument]:
     logger = get_run_logger()
-    documents = []
+    documents: list[RawDocument] = []
 
     # Check if the config contains any sources requesting Hacker News
-    sources = source_config.get("source", [])
-    hn_sources = [s for s in sources if s.get("kind") == "hn"]
+    hn_sources = [s for s in source_config.sources if s.kind == "hn"]
 
     if not hn_sources:
         return []
 
     for src in hn_sources:
-        source_name = src.get("name", "Hacker News")
-        category = src.get("category", "Hacker News")
-        limit = src.get("limit", 10)
-        since_hours = src.get("since_hours", 48)
-        min_points = src.get("min_points", 50)
+        limit = src.limit if src.limit is not None else 10
 
-        since = int(time.time() - since_hours * 3600)
+        since = int(time.time() - src.since_hours * 3600)
         params: dict[str, str | int | list[str]] = {
             "tags": "story",
             # Pass as a list so 'requests' parses it as &numericFilters=X&numericFilters=Y
-            "numericFilters": [f"created_at_i>{since}", f"points>{min_points}"],
+            "numericFilters": [f"created_at_i>{since}", f"points>{src.min_points}"],
             "hitsPerPage": 100,
         }
 
@@ -74,9 +70,9 @@ def fetch_sources(source_config: dict) -> list[RawDocument]:
                     source_id=url,
                     content_type="rss",  # Route through standard markdown formatter
                     raw_text=raw_text,
+                    title=title,
+                    category=src.category,
                     metadata={
-                        "title": title,
-                        "category": category,
                         "feed_url": "https://news.ycombinator.com",
                         "points": h.get("points"),
                     },

@@ -19,6 +19,12 @@ class RawDocument(BaseModel):
     source_id: str
     content_type: Literal["rss", "academic_pdf", "wiki_event", "wiki_quote"]
     raw_text: str
+    title: str = ""
+    category: str = "Uncategorized"
+    published: str = ""
+    # Local-ranking score attached by triage Stage 2B (lower = better).
+    heuristic_score: int = 3
+    # Free-form plugin extras (e.g. feed_url); typed data belongs in fields.
     metadata: dict = Field(default_factory=dict)
 
 
@@ -67,10 +73,20 @@ class Telemetry(BaseModel):
         return "~ 0" if c < 0.05 else f"{c:.3f}"
 
 
+class Quote(BaseModel):
+    text: str
+    author: str = "Anonymous"
+
+
 class FrontpageDecorations(BaseModel):
     world_news: list[str] = Field(
         default_factory=lambda: ["World news currently unavailable."],
         description="Bullet points for the Wikipedia current events sidebar.",
+    )
+    quote: Quote | None = None
+    dyk: list[str] = Field(
+        default_factory=list,
+        description="'Did you know...' facts for the front page.",
     )
 
 
@@ -82,9 +98,25 @@ class ArticleChunk(BaseModel):
     summary: str
     body_markdown: str
     url: str
-    url_hash: str = ""
     date: str = ""
     published_date: str = ""
     relative_time: str = ""
     telemetry: Telemetry = Field(default_factory=Telemetry)
     annotations: list[Annotation] = Field(default_factory=list)
+
+
+class RenderContext(BaseModel):
+    """Everything the Typst template needs for one edition.
+
+    This is the single contract between the pipeline and the renderer;
+    the adapter flattens it into template variables.
+    """
+
+    date: str
+    generation_time: str
+    total_tokens: str
+    total_cost: str
+    articles: list[ArticleChunk] = Field(default_factory=list)
+    decorations: FrontpageDecorations = Field(default_factory=FrontpageDecorations)
+    # Index into `articles` of the front-page lead story (design refresh hook).
+    lead_article_index: int | None = None

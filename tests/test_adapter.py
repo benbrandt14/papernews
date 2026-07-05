@@ -1,5 +1,12 @@
-from papernews.adapter import article_to_dict
-from papernews.models import Annotation, ArticleChunk, Telemetry
+from papernews.adapter import article_to_dict, render_context_to_template_vars
+from papernews.models import (
+    Annotation,
+    ArticleChunk,
+    FrontpageDecorations,
+    Quote,
+    RenderContext,
+    Telemetry,
+)
 
 
 def test_article_to_dict_conversion():
@@ -16,7 +23,6 @@ def test_article_to_dict_conversion():
         summary="This is a test summary.",
         body_markdown="This is the full **markdown** body.",
         url="https://example.com/test",
-        url_hash="abcdef123456",
         date="2023-10-27",
         published_date="2023-10-27T10:00:00Z",
         relative_time="2 days ago",
@@ -65,3 +71,47 @@ def test_article_to_dict_cost_formatting():
     data = article_to_dict(chunk)
     # 1M prompt = $0.075, 1M output = $0.30 => Total $0.375 => 37.5 cents
     assert data["telemetry"]["formatted_cost"] == "37.500"
+
+
+def test_render_context_to_template_vars():
+    """The adapter must assemble the exact `decorations` shape the template
+    reads: front-page decorations merged with run metadata."""
+    ctx = RenderContext(
+        date="2026-07-05",
+        generation_time="Jul 05, 2026 at 07:00 AM",
+        total_tokens="1.5k",
+        total_cost="~ 0",
+        articles=[
+            ArticleChunk(
+                category="Tech",
+                source="example.com",
+                title="Title",
+                summary="Sum",
+                body_markdown="Body",
+                url="https://example.com",
+                telemetry=Telemetry(prompt_tokens=10, output_tokens=5),
+            )
+        ],
+        decorations=FrontpageDecorations(
+            world_news=["Something happened."],
+            quote=Quote(text="Words.", author="Someone"),
+            dyk=["a fact"],
+        ),
+    )
+
+    variables = render_context_to_template_vars(ctx)
+
+    assert variables["date"] == "2026-07-05"
+    deco = variables["decorations"]
+    assert deco["generation_time"] == "Jul 05, 2026 at 07:00 AM"
+    assert deco["total_tokens"] == "1.5k"
+    assert deco["total_cost"] == "~ 0"
+    assert deco["world_news"] == ["Something happened."]
+    assert deco["quote"] == {"text": "Words.", "author": "Someone"}
+    assert deco["dyk"] == ["a fact"]
+
+    # Articles are dicts with the telemetry @property fields injected
+    art = variables["articles"][0]
+    assert art["title"] == "Title"
+    assert art["telemetry"]["formatted_tokens"] == "0.0k"
+    assert "formatted_cost" in art["telemetry"]

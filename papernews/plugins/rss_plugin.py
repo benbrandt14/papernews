@@ -5,6 +5,7 @@ import feedparser
 import pluggy
 import trafilatura
 
+from papernews.config import AppConfig
 from papernews.models import RawDocument
 
 hookimpl = pluggy.HookimplMarker("papernews")
@@ -12,19 +13,14 @@ logging.getLogger("trafilatura").setLevel(logging.ERROR)
 
 
 @hookimpl
-def fetch_sources(source_config: dict) -> list[RawDocument]:
+def fetch_sources(source_config: AppConfig) -> list[RawDocument]:
     documents = []
 
-    # 1. Extract the [[source]] array from the TOML
-    sources = source_config.get("source", [])
-
-    # 2. Filter for only RSS feeds (Hacker News will be handled by a separate hn_plugin)
-    rss_sources = [s for s in sources if s.get("kind") == "rss"]
+    # Only RSS feeds; Hacker News is handled by hn_plugin.
+    rss_sources = [s for s in source_config.sources if s.kind == "rss"]
 
     for source in rss_sources:
-        feed_url = source.get("url")
-        category = source.get("category", "Uncategorized")
-        feed = feedparser.parse(feed_url)
+        feed = feedparser.parse(source.url)
 
         for entry in feed.entries:
             url = entry.link
@@ -52,12 +48,10 @@ def fetch_sources(source_config: dict) -> list[RawDocument]:
                         source_id=url,
                         content_type="rss",
                         raw_text=extracted_text,
-                        metadata={
-                            "title": title,
-                            "feed_url": feed_url,
-                            "category": category,
-                            "published": pub_date,  # Safely captured
-                        },
+                        title=title,
+                        category=source.category,
+                        published=pub_date,
+                        metadata={"feed_url": source.url},
                     )
                 )
 

@@ -32,7 +32,6 @@ import os
 import subprocess
 import sys
 import threading
-import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -40,6 +39,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
+from papernews.config import AppConfig, load_config
 from papernews.preview import render_cover_png
 
 # --- Config helpers -------------------------------------------------------
@@ -53,9 +53,8 @@ def _output_dir() -> Path:
     return Path(os.environ.get("PAPERNEWS_OUTPUT", "output"))
 
 
-def _load_config() -> dict:
-    with open(_config_path(), "rb") as f:
-        return tomllib.load(f)
+def _load_config() -> AppConfig:
+    return load_config(_config_path())
 
 
 def _latest_pdf() -> Path | None:
@@ -81,7 +80,7 @@ def _run_edition() -> Path:
     from papernews.core.main import run_papernews
 
     config = _load_config()
-    return Path(run_papernews(config))
+    return Path(run_papernews(config=config))
 
 
 def _do_ingest() -> None:
@@ -150,12 +149,8 @@ def create_app() -> FastAPI:
         return JSONResponse(
             {
                 "sources": [
-                    {
-                        "name": s.get("name"),
-                        "kind": s.get("kind"),
-                        "limit": s.get("limit"),
-                    }
-                    for s in cfg.get("source", [])
+                    {"name": s.name, "kind": s.kind, "limit": s.limit}
+                    for s in cfg.sources
                 ],
             }
         )

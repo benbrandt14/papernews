@@ -1,7 +1,5 @@
 # papernews/core/main.py
-import os
 import re
-import tomllib
 from datetime import UTC, date, datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -10,22 +8,28 @@ from urllib.parse import urlparse
 import pluggy
 from prefect import flow, task
 
+from papernews.config import AppConfig, Preferences, get_settings, load_config
 from papernews.core.router import (
     llm_format_body,
     llm_select_article,
     llm_summarize_article,
 )
-from papernews.models import ArticleChunk, FrontpageDecorations, RawDocument, Telemetry
+from papernews.models import (
+    ArticleChunk,
+    FrontpageDecorations,
+    RawDocument,
+    RenderContext,
+    Telemetry,
+)
 from papernews.render import build_pdf
 
-# Configuration
-MAX_BUDGET = 12
-# Drop raw URLs, short stubs, or noisy topics
+# Drop raw URLs, short stubs, or noisy topics before any scoring happens.
 NOISE_PATTERNS = [
     r"(?i)mice models?",
     r"(?i)rat models?",
     r"^(https?://[^\s]+)$",  # Drops articles that are literally just a URL string
 ]
+_NOISE_RES = [re.compile(p) for p in NOISE_PATTERNS]
 
 
 def get_human_time(dt: datetime) -> str:
@@ -50,8 +54,8 @@ def get_human_time(dt: datetime) -> str:
         return f"{int(years) if years.is_integer() else years} year{'s' if years != 1 else ''} ago"
 
 
-@task(name="Stage 1: Ingestion")
-def stage1_ingestion(source_config: dict) -> list[RawDocument]:
+@task(name="Stage 1: Ingestion", retries=2, retry_delay_seconds=5)
+def stage1_ingestion(config: AppConfig) -> list[RawDocument]:
     """Dynamically loads all plugins and fetches RawDocuments."""
     pm = pluggy.PluginManager("papernews")
 
@@ -63,7 +67,7 @@ def stage1_ingestion(source_config: dict) -> list[RawDocument]:
     pm.register(hn_plugin)
 
     # pm.hook.fetch_sources returns a list of lists (one per plugin)
-    plugin_results = pm.hook.fetch_sources(source_config=source_config)
+    plugin_results = pm.hook.fetch_sources(source_config=config)
 
     # Flatten results
     documents = [doc for sublist in plugin_results for doc in sublist]
@@ -73,15 +77,14 @@ def stage1_ingestion(source_config: dict) -> list[RawDocument]:
 
 @task(name="Stage 2A: Deterministic Blacklist Filter")
 def triage_process_a_filter(
-    documents: list[RawDocument], prefs: dict
+    documents: list[RawDocument], prefs: Preferences
 ) -> list[RawDocument]:
     filtered_docs = []
-    blacklist = prefs.get("blacklist_words", [])
-    max_char_length = prefs.get("max_char_length", 20000)
 
-    if blacklist:
+    if prefs.blacklist_words:
         pattern = re.compile(
-            r"\b(" + "|".join(map(re.escape, blacklist)) + r")\b", re.IGNORECASE
+            r"\b(" + "|".join(map(re.escape, prefs.blacklist_words)) + r")\b",
+            re.IGNORECASE,
         )
     else:
         pattern = None
@@ -90,13 +93,20 @@ def triage_process_a_filter(
         if len(doc.raw_text) < 800 and doc.content_type == "rss":
             continue
 
-        if len(doc.raw_text) > max_char_length and doc.content_type != "academic_pdf":
+        if (
+            len(doc.raw_text) > prefs.max_char_length
+            and doc.content_type != "academic_pdf"
+        ):
             continue
 
-        if pattern:
-            title = doc.metadata.get("title", "")
-            if pattern.search(doc.raw_text) or pattern.search(title):
-                continue
+        if pattern and (pattern.search(doc.raw_text) or pattern.search(doc.title)):
+            continue
+
+        # Built-in noise patterns: irrelevant topics in the title, or a
+        # body that is nothing but a bare URL.
+        stripped = doc.raw_text.strip()
+        if any(p.search(doc.title) or p.search(stripped) for p in _NOISE_RES):
+            continue
 
         filtered_docs.append(doc)
 
@@ -105,56 +115,52 @@ def triage_process_a_filter(
 
 @task(name="Stage 2B: Local Ranking")
 def triage_process_b_rank(
-    documents: list[RawDocument], prefs: dict
+    documents: list[RawDocument], prefs: Preferences
 ) -> list[RawDocument]:
-    interests = prefs.get("interest", [])
-
     def heuristic_score(doc: RawDocument) -> int:
-        text = doc.raw_text.lower()
-        title = doc.metadata.get("title", "").lower()
-        for interest in interests:
+        title = doc.title.lower()
+        for interest in prefs.interest:
             keyword = interest.split()[0].lower()
             if keyword in title:
                 return 1
         return 3
 
-    # Attach the score to the metadata before returning
-    for doc in documents:
-        doc.metadata["heuristic_score"] = heuristic_score(doc)
-
-    return sorted(documents, key=lambda d: d.metadata["heuristic_score"])
+    # Return scored copies — tasks must not mutate their inputs.
+    scored = [
+        doc.model_copy(update={"heuristic_score": heuristic_score(doc)})
+        for doc in documents
+    ]
+    return sorted(scored, key=lambda d: d.heuristic_score)
 
 
 @task(name="Stage 2C: Category Limit Enforcer")
 def triage_process_c_budget(
-    documents: list[RawDocument], limits: dict, prefs: dict
+    documents: list[RawDocument], limits: dict[str, int], prefs: Preferences
 ) -> list[RawDocument]:
     """
     Enforces the [category_limits] strictly in Python so we never
     pay the LLM to process more articles than the PDF requires.
     """
-    default_limit = prefs.get("default_category_limit", 1)
     surviving_docs = []
     category_counts: dict[str, int] = {}
 
     for doc in documents:
-        cat = doc.metadata.get("category", "Uncategorized")
         # Look up the specific limit for this category, or fall back to default
-        cat_limit = limits.get(cat, default_limit)
+        cat_limit = limits.get(doc.category, prefs.default_category_limit)
 
-        current_count = category_counts.get(cat, 0)
+        current_count = category_counts.get(doc.category, 0)
 
         # If we haven't hit the cap for this category, keep the article
         if current_count < cat_limit:
             surviving_docs.append(doc)
-            category_counts[cat] = current_count + 1
+            category_counts[doc.category] = current_count + 1
 
     return surviving_docs
 
 
 @task(name="Stage 3: Hybrid Construction")
 def stage3_hybrid_construction(
-    documents: list[RawDocument], prefs: dict
+    documents: list[RawDocument], prefs: Preferences
 ) -> tuple[list[ArticleChunk], Telemetry]:
     processed_chunks = []
     total_run_telemetry = Telemetry()
@@ -177,12 +183,11 @@ def stage3_hybrid_construction(
 
         # Parse Date
         rel_time = ""
-        pub_date_str = doc.metadata.get("published", "")
-        if pub_date_str:
+        if doc.published:
             try:
-                dt = parsedate_to_datetime(pub_date_str)
+                dt = parsedate_to_datetime(doc.published)
                 rel_time = get_human_time(dt)
-            except Exception:
+            except (ValueError, TypeError):
                 pass
 
         # Parse Source Domain
@@ -191,18 +196,19 @@ def stage3_hybrid_construction(
             domain_source = urlparse(
                 doc.metadata.get("feed_url", doc.source_id)
             ).netloc.replace("www.", "")
-        except:
+        except ValueError:
             pass
 
         chunk = ArticleChunk(
             content_type=doc.content_type,
-            category=doc.metadata.get("category", "Uncategorized"),
+            category=doc.category,
             source=domain_source,
-            title=doc.metadata.get("title", "Untitled"),
+            title=doc.title or "Untitled",
             summary=summary_text,
             body_markdown=formatted_markdown,
             url=doc.source_id,
-            published_date=pub_date_str,
+            date=rel_time,
+            published_date=doc.published,
             relative_time=rel_time,
             telemetry=article_telemetry,
             annotations=[],
@@ -213,7 +219,7 @@ def stage3_hybrid_construction(
 
 
 @task(name="Stage 4B: Template Decorations")
-def stage4b_fetch_decorations(source_config: dict) -> dict:
+def stage4b_fetch_decorations(config: AppConfig) -> FrontpageDecorations:
     pm = pluggy.PluginManager("papernews")
 
     from papernews.plugins import wiki_plugin
@@ -221,67 +227,53 @@ def stage4b_fetch_decorations(source_config: dict) -> dict:
     pm.register(wiki_plugin)
 
     # Execute hooks (returns a list of FrontpageDecorations models)
-    results = pm.hook.fetch_decorations(source_config=source_config)
+    results = pm.hook.fetch_decorations(source_config=config)
 
-    # Start with an empty, default model
-    master_decorations = FrontpageDecorations()
-
-    # Merge all plugin models together (overwriting defaults with actual data)
+    # Merge all plugin models together (later plugins overwrite earlier ones)
+    merged: dict = {}
     for res in results:
-        for field, value in res.model_dump(exclude_unset=True).items():
-            setattr(master_decorations, field, value)
+        merged.update(res.model_dump(exclude_unset=True))
 
-    # Convert back to a dictionary for the Jinja/Typst renderer
-    return master_decorations.model_dump()
+    return FrontpageDecorations.model_validate(merged)
 
 
 @task(name="Stage 5: Bespoke Renderer")
 def stage5_bespoke_render(
-    articles: list[ArticleChunk], total_telemetry: Telemetry, decorations: dict
+    articles: list[ArticleChunk],
+    total_telemetry: Telemetry,
+    decorations: FrontpageDecorations,
 ) -> Path:
-    out_dir = Path(os.environ.get("PAPERNEWS_OUTPUT", "output"))
+    settings = get_settings()
+    out_dir = settings.output
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    today_str = date.today().strftime("%Y-%m-%d")
-
-    generation_timestamp = datetime.now().strftime("%b %d, %Y at %I:%M %p")
-
-    decorations = {
-        "generation_time": generation_timestamp,
-        "total_tokens": total_telemetry.formatted_tokens,
-        "total_cost": total_telemetry.formatted_cost,
-        "quote": {
-            "text": "Benjamin you stop pickin' the bark off of that tree!",
-            "author": "Grandma Brandt",
-        },
-        "world_news": [],
-        "dyk": [],
-    }
-
-    pdf_path = build_pdf(
-        date=today_str,
+    ctx = RenderContext(
+        date=date.today().strftime("%Y-%m-%d"),
+        generation_time=datetime.now().strftime("%b %d, %Y at %I:%M %p"),
+        total_tokens=total_telemetry.formatted_tokens,
+        total_cost=total_telemetry.formatted_cost,
         articles=articles,
-        out_dir=out_dir,
         decorations=decorations,
     )
-    return pdf_path
+
+    return build_pdf(ctx, out_dir)
 
 
 @flow(name="Papernews Processing Flow", log_prints=True)
-def run_papernews(source_config: dict) -> Path:
-    # Extract Configs
-    prefs = source_config.get("preferences", {})
-    limits = source_config.get("category_limits", {})
+def run_papernews(config: AppConfig) -> Path:
+    raw_docs = stage1_ingestion(config)
 
-    raw_docs = stage1_ingestion(source_config)
+    filtered = triage_process_a_filter(raw_docs, config.preferences)
+    ranked = triage_process_b_rank(filtered, config.preferences)
+    budgeted = triage_process_c_budget(
+        ranked, config.category_limits, config.preferences
+    )
 
-    filtered = triage_process_a_filter(raw_docs, prefs)
-    ranked = triage_process_b_rank(filtered, prefs)
-    budgeted = triage_process_c_budget(ranked, limits, prefs)
+    article_chunks, total_telemetry = stage3_hybrid_construction(
+        budgeted, config.preferences
+    )
 
-    article_chunks, total_telemetry = stage3_hybrid_construction(budgeted, prefs)
-
-    decorations = stage4b_fetch_decorations(source_config)
+    decorations = stage4b_fetch_decorations(config)
 
     pdf_path = stage5_bespoke_render(article_chunks, total_telemetry, decorations)
 
@@ -289,14 +281,11 @@ def run_papernews(source_config: dict) -> Path:
 
 
 if __name__ == "__main__":
-    config_path = Path("sources.toml")
+    settings = get_settings()
+    if not settings.config.exists():
+        print(f"Error: {settings.config.absolute()} not found.")
+        raise SystemExit(1)
 
-    if not config_path.exists():
-        print(f"Error: {config_path.absolute()} not found.")
-        exit(1)
-
-    with open(config_path, "rb") as f:
-        actual_config = tomllib.load(f)
-
-    print(f"Loaded config with {len(actual_config.get('source', []))} sources.")
-    run_papernews(source_config=actual_config)
+    app_config = load_config(settings.config)
+    print(f"Loaded config with {len(app_config.sources)} sources.")
+    run_papernews(config=app_config)
