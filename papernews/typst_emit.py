@@ -22,7 +22,16 @@ from pathlib import Path
 from PIL import Image
 
 from papernews.models import Block, ImageRef, Span
-from papernews.render import _render_code_block, typst_escape, typst_url
+from papernews.render import typst_escape, typst_url
+
+
+def _render_code_block(code: str) -> str:
+    fence_len = 3
+    while "`" * fence_len in code:
+        fence_len += 1
+    fence = "`" * fence_len
+    return f"\n\n{fence}\n{code}\n{fence}\n\n"
+
 
 # Typst helpers the emitter's output relies on. The template preamble must
 # include this (tests prepend it before compiling emitted fragments).

@@ -265,18 +265,10 @@
 
   ((* if art.body_markdown | length > 2000 *))
     #columns(2, gutter: 1.5em)[
-      ((* if art.body_typst *))
       ((( art.body_typst )))
-      ((* else *))
-      ((( art.body_markdown | typst_body )))
-      ((* endif *))
     ]
   ((* else *))
-    ((* if art.body_typst *))
     ((( art.body_typst )))
-    ((* else *))
-    ((( art.body_markdown | typst_body )))
-    ((* endif *))
   ((* endif *))
 
   // Force long articles to break to a new page so the next article starts fresh

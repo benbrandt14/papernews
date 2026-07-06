@@ -15,7 +15,7 @@ Papernews enforces a strict boundary between data processing and presentation.
 
 ### Configuration
 * `sources.toml` loads through `papernews/config.py` into strict Pydantic models (`extra="forbid"`); unknown keys and `[category_limits]` entries matching no source category fail at load time. Never bypass `load_config`.
-* Process-level switches are `PAPERNEWS_*` env vars via `Settings` (llm_enabled, llm_backend, use_ir_renderer, paths).
+* Process-level switches are `PAPERNEWS_*` env vars via `Settings` (llm_enabled, llm_backend, paths).
 
 ### Python & Prefect (Orchestration & Data Flow)
 * **Idempotency & Resiliency:** Wrap external network requests and LLM invocations in Prefect `@task` decorators with explicit retry policies. Transient errors must propagate so retries actually fire; degrade to fallbacks only on the final attempt.
@@ -37,7 +37,7 @@ Papernews enforces a strict boundary between data processing and presentation.
 
 ### Rendering (IR + Typst)
 * Article bodies flow through the markdown IR: `markdown_ir.parse_markdown` (pure; plain text + char-offset `Span`s) → enrichers → `typst_emit.emit_blocks` (escapes exactly once, no sentinel tokens). Enrichers operate on `Block.text` offsets and must never see markdown or Typst.
-* The legacy `typst_body` regex path in `render.py` is a deprecated fallback (`PAPERNEWS_USE_IR_RENDERER=0`); do not extend it — new inline constructs are new `Span`/`Block` kinds plus an emitter case.
+* There is no other render path: new inline constructs are new `Span`/`Block` kinds plus an emitter case. Never reintroduce string-level markup munging.
 * `build_pdf` raises `RenderError` on Typst compile failure; never swallow it.
 
 ## 4. The Pipeline Reference
