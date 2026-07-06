@@ -42,11 +42,6 @@ dev = [
     "pytest-cov>=7.1.0",
 ]
 
-[tool.coverage.run]
-# wiki.py is legacy harvest material for the decorations restore; it is
-# deleted (not covered) once its parsers move into the wiki plugin.
-omit = ["papernews/wiki.py"]
-
 [tool.ruff]
 # Enable Pyflakes (F), pycodestyle (E), isort (I), and pyupgrade (UP)
 lint.select = ["E", "F", "I", "UP"]
@@ -59,8 +54,3 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["papernews.*"]
 disallow_untyped_defs = true
-
-[[tool.mypy.overrides]]
-# Legacy harvest material, deleted with the decorations restore.
-module = ["papernews.wiki"]
-disallow_untyped_defs = false

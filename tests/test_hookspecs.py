@@ -87,6 +87,9 @@ def test_fetch_decorations_through_registry(mocker):
 
     mocker.patch("papernews.plugins.wiki_plugin.get_run_logger")
     mocker.patch("papernews.plugins.wiki_plugin.requests.get", return_value=WikiResp())
+    # Keep the QOTD/DYK sub-fetches off the network in this wiring test.
+    mocker.patch("papernews.plugins.wiki_plugin._fetch_quote_of_day", return_value=None)
+    mocker.patch("papernews.plugins.wiki_plugin._fetch_did_you_know", return_value=[])
 
     pm = get_plugin_manager()
     results = pm.hook.fetch_decorations(source_config=AppConfig())

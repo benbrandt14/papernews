@@ -266,6 +266,7 @@ def stage5_bespoke_render(
         total_cost=total_telemetry.formatted_cost,
         articles=articles,
         decorations=decorations,
+        lead_article_index=0 if articles else None,
     )
 
     return build_pdf(ctx, out_dir)

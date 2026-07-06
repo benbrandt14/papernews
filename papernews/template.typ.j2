@@ -1,16 +1,30 @@
 #import "@preview/mitex:0.2.4": mi, mitex
 
+// ============================================================================
+// Papernews — hybrid broadsheet/magazine template
+//   Page 1: newspaper cover (nameplate, dateline, lead story above the fold,
+//           snippet grid below, decorations strip).
+//   Body:   two-column magazine article pages.
+// Fonts (vendored in papernews/fonts, OFL):
+//   Chomsky        — blackletter nameplate
+//   Libre Franklin — kickers, datelines, labels
+//   New Computer Modern — body serif (bundled with the Typst compiler)
+// ============================================================================
+
+// --- Vertical rhythm: all spacing derives from one unit --------------------
+#let u = 0.65em
+
 #set document(title: "Papernews", author: "Papernews")
 #set page(
   width: 203mm,
   height: 270mm,
-  margin: (inside: 20mm, outside: 20mm, top: 20mm, bottom: 20mm),
+  margin: (inside: 22mm, outside: 16mm, top: 18mm, bottom: 18mm),
   header: none,
   footer: none
 )
 
 #set text(
-  font: ("New Computer Modern", "Linux Libertine", "Times New Roman"),
+  font: ("New Computer Modern", "Libre Franklin"),
   size: 10pt,
   lang: "en",
 )
@@ -18,8 +32,8 @@
 #set par(
   justify: true,
   first-line-indent: 1em,
-  leading: 0.6em,
-  spacing: 0.6em
+  leading: u,
+  spacing: u
 )
 
 // Salience weighting (structured-IR bodies): high-salience sentences get
@@ -31,156 +45,221 @@
   else { body }
 }
 
-// Magazine typography
+// --- Type system ------------------------------------------------------------
+#let sans = "Libre Franklin"
+
+// Category kicker: letterspaced sans caps, the newspaper section marker.
+#let kicker(content) = text(
+  font: sans, size: 7.5pt, weight: 600, tracking: 0.16em, upper(content)
+)
+
 #let sourcelabel(content) = text(size: 0.85em, tracking: 0.05em, smallcaps(content))
 
 #let sectionhead(content) = {
-  v(0.5em)
-  text(size: 1.2em, weight: "bold", font: "New Computer Modern", content)
-  v(0.2em)
+  v(u, weak: true)
+  kicker(content)
+  v(0.35 * u)
   line(length: 100%, stroke: 0.5pt)
-  v(0.4em)
+  v(0.6 * u)
 }
 
 #let articletitle(url, title) = {
-  v(0.35em)
+  v(0.5 * u)
   text(size: 1.3em, weight: "bold", link(url, title))
-  v(0.35em)
+  v(0.5 * u)
 }
 
 #let articlelede(content) = {
-  v(0.35em)
+  v(0.5 * u)
   text(style: "italic", size: 10pt, content)
-  v(0.55em)
+  v(0.8 * u)
   line(length: 100%, stroke: 0.4pt)
-  v(0.55em)
+  v(0.8 * u)
 }
 
-// --- Cover Page --------------------------------------------
+// ============================================================================
+// PAGE 1 — The broadsheet cover
+// ============================================================================
+#set par(first-line-indent: 0pt)
+
+// --- Nameplate ---------------------------------------------------------------
 #align(center)[
-  #text(size: 50pt, weight: "bold", font: "New Computer Modern")[Papernews] \
-  #v(0.4em)
-  #line(length: 100%, stroke: 1.5pt)
-  #v(0.3em)
-  #text(size: 10pt, tracking: 0.15em, smallcaps[((( decorations.generation_time | typst ))) #h(1fr) ((( articles | length ))) Articles #h(1fr) ((( decorations.total_tokens ))) Tokens / ((( decorations.total_cost )))¢])
-  #v(0.3em)
-  #line(length: 100%, stroke: 1.5pt)
+  #text(font: "Chomsky", size: 46pt)[Papernews]
 ]
-#v(1.5em)
+#v(0.6 * u)
+#line(length: 100%, stroke: 1.6pt)
+#v(0.35 * u)
+#text(font: sans, size: 8pt, tracking: 0.14em)[
+  #upper[((( decorations.generation_time | typst )))]
+  #h(1fr)
+  #upper[((( articles | length ))) Articles]
+  #h(1fr)
+  #upper[((( decorations.total_tokens ))) tokens #sym.dot.c ((( decorations.total_cost )))¢]
+]
+#v(0.35 * u)
+#line(length: 100%, stroke: 0.6pt)
+#v(1.2 * u)
 
-#columns(3, gutter: 1.5em)[
-
-  ((* if decorations.quote *))
-  #text(size: 10.5pt, style: "italic")[ ((( decorations.quote.text | typst ))) ] \
-  #align(right)[
-    #text(size: 9pt, smallcaps[--- ((* if decorations.quote.author *))((( decorations.quote.author | typst )))((* else *))Anonymous((* endif *))])
+((* if articles *))
+((* set lead = articles[0] *))
+// --- Lead story, above the fold ---------------------------------------------
+#block(breakable: false)[
+  #kicker[((( lead.category | typst )))]
+  #v(0.7 * u)
+  #text(size: 26pt, weight: "bold", hyphenate: false)[
+    #link(<art1>)[((( lead.title | typst )))]
   ]
-  #v(1em)
-  ((* endif *))
-
-  ((* if decorations.world_news *))
-  #sectionhead("World News")
-  ((* for item in decorations.world_news *))
-    #block(breakable: false)[
-      #set par(first-line-indent: 0pt, justify: false)
-      *((( item | typst )))*
+  #v(0.9 * u)
+  ((* if lead.summary *))
+  #par(first-line-indent: 0pt, justify: true, leading: 0.8em)[
+    #text(size: 11.5pt, style: "italic")[
+      #text(size: 2.2em, weight: "bold", style: "normal")[((( lead.summary[:1] | typst )))]((( lead.summary[1:221] | typst )))((* if lead.summary | length > 221 *))…((* endif *))
     ]
-    #v(0.8em)
-  ((* endfor *))
+  ]
+  #v(0.6 * u)
   ((* endif *))
+  #text(font: sans, size: 8pt, tracking: 0.08em)[
+    #upper[((( lead.source | typst )))]
+    ((* if lead.date *))#sym.dot.c #upper[((( lead.date | typst )))] ((* endif *))
+    #sym.dot.c continues on page #context locate(<art1>).page()
+  ]
+]
 
-  ((* if decorations.dyk *))
-  #sectionhead("Did you know...")
-  #set par(first-line-indent: 0pt, justify: false)
-  ((* for fact in decorations.dyk *))
-    #block(breakable: true)[
-      #sym.dots ((( fact | typst )))
+#v(1.2 * u)
+// --- The fold ----------------------------------------------------------------
+#line(length: 100%, stroke: 1.2pt)
+#v(1.4 * u)
+
+// --- Below the fold: secondary stories ---------------------------------------
+// Fixed-height, clipped cells keep the grid uniform no matter how long the
+// LLM's summaries run — the newspaper answer to unpredictable copy.
+((* if articles | length > 1 *))
+#grid(
+  columns: (1fr, 1fr, 1fr),
+  column-gutter: 1.6em,
+  row-gutter: 1.0em,
+  ((* for art in articles[1:7] *))
+  block(breakable: false)[
+    #set par(first-line-indent: 0pt, justify: false)
+    #kicker[((( art.category | typst )))]
+    #v(0.4 * u)
+    #text(size: 11pt, weight: "bold", hyphenate: false)[
+      #link(<art((( loop.index + 1 )))>)[((( art.title | truncate(56) | typst )))]
     ]
-    #v(0.6em)
-  ((* endfor *))
-  ((* endif *))
-
-  #sectionhead("Index")
-  #set par(first-line-indent: 0pt, justify: false)
-  ((* set ns = namespace(prev='') *))
-  ((* for art in articles *))
-    ((* if art.category != ns.prev *))
-      #v(0.8em, weak: true)
-      #text(size: 8.5pt, weight: "bold", fill: luma(50%), smallcaps([((( art.category | typst )))]))
-      #v(0.2em, weak: true)
-      ((* set ns.prev = art.category *))
+    ((* if art.summary *))
+    #v(0.35 * u)
+    #par(leading: 0.5em)[#text(size: 8.5pt, style: "italic")[((( art.summary | truncate(110) | typst )))]]
     ((* endif *))
-    #block(breakable: true)[
-      #link(<art((( loop.index )))>)[#text(size: 9.5pt)[((( art.title | typst )))]]
-    ]
-    #v(0.4em)
+    #v(0.35 * u)
+    #text(font: sans, size: 7pt, tracking: 0.08em)[#upper[((( art.source | typst )))] #sym.dot.c p. #context locate(<art((( loop.index + 1 )))>).page()]
+  ],
   ((* endfor *))
+)
+((* endif *))
 
-] 
+((* if articles | length > 7 *))
+#v(1.2 * u)
+#line(length: 100%, stroke: 0.5pt)
+#v(0.6 * u)
+#kicker[Also in this issue]
+#v(0.5 * u)
+#grid(
+  columns: (1fr, 1fr),
+  column-gutter: 1.6em,
+  row-gutter: 0.6em,
+  ((* for art in articles[7:] *))
+  block(breakable: false)[
+    #set par(first-line-indent: 0pt, justify: false)
+    #text(size: 9pt)[#link(<art((( loop.index + 7 )))>)[((( art.title | truncate(64) | typst )))] #h(1fr) #text(font: sans, size: 7.5pt)[p. #context locate(<art((( loop.index + 7 )))>).page()]]
+  ],
+  ((* endfor *))
+)
+((* endif *))
+((* endif *))
+
+// --- Bottom strip: quote · world news · did you know -------------------------
+// A floating bottom placement: pinned to the page foot, and the float
+// reserves its space so flow content above can never overlap it.
+#place(bottom, float: true, clearance: 1.2em, block(width: 100%)[
+  #line(length: 100%, stroke: 1.2pt)
+  #v(0.8 * u)
+  #grid(
+    columns: (1.1fr, 1.2fr, 1fr),
+    column-gutter: 1.8em,
+    align: top,
+    [
+      #set par(first-line-indent: 0pt, justify: false)
+      ((* if decorations.quote *))
+      #kicker[Quote of the day]
+      #v(0.5 * u)
+      #text(size: 9.5pt, style: "italic")[“((( decorations.quote.text | truncate(180) | typst )))”]
+      #v(0.3 * u)
+      #align(right)[#text(font: sans, size: 7.5pt, tracking: 0.08em)[— #upper[((( decorations.quote.author | typst )))]]]
+      ((* endif *))
+    ],
+    [
+      #set par(first-line-indent: 0pt, justify: false)
+      ((* if decorations.world_news *))
+      #kicker[World news]
+      #v(0.5 * u)
+      ((* for item in decorations.world_news[:2] *))
+      #block(breakable: false)[#par(leading: 0.45em)[#text(size: 8.5pt)[((( item | truncate(95) | typst )))]]]
+      #v(0.3 * u)
+      ((* endfor *))
+      ((* endif *))
+    ],
+    [
+      #set par(first-line-indent: 0pt, justify: false)
+      ((* if decorations.dyk *))
+      #kicker[Did you know…]
+      #v(0.5 * u)
+      ((* for fact in decorations.dyk[:2] *))
+      #block(breakable: false)[#par(leading: 0.45em)[#text(size: 8.5pt)[#sym.dots ((( fact | truncate(85) | typst )))]]]
+      #v(0.3 * u)
+      ((* endfor *))
+      ((* endif *))
+    ],
+  )
+])
 
 #pagebreak()
 
-// --- Front matter: headlines + ledes --------------------------------------
+// ============================================================================
+// ARTICLE PAGES — magazine body
+// ============================================================================
 #set page(
-  footer: align(center)[#context counter(page).display()],
-  margin: (inside: 20mm, outside: 20mm, top: 24mm, bottom: 24mm)
+  footer: align(center)[#text(font: sans, size: 8pt)[#context counter(page).display()]],
+  margin: (inside: 22mm, outside: 16mm, top: 22mm, bottom: 22mm)
 )
 #counter(page).update(1)
 
-#text(size: 16pt, weight: "bold", font: "New Computer Modern", "In this issue")
-#v(0.6em)
-#line(length: 100%, stroke: 1pt)
-#v(1em)
-
-#columns(2, gutter: 2em)[
-  #set par(first-line-indent: 0pt)
-  ((* set ns = namespace(prev='') *))
-  ((* for art in articles *))
-    ((* if art.category != ns.prev *))
-      #v(0.8em, weak: true)
-      #text(size: 11pt, weight: "bold", font: "New Computer Modern", [((( art.category | typst )))])
-      #v(0.4em, weak: true)
-      ((* set ns.prev = art.category *))
-    ((* endif *))
-    #block(breakable: true)[
-      #sourcelabel([((( art.source | typst )))])((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")[[((( art.date | typst )))]]((* endif *)) #h(1fr) #text(size: 9pt, weight: "bold")[p. #context locate(<art((( loop.index )))>).page()] \
-      #v(0.2em)
-      #link(<art((( loop.index )))>)[*((( art.title | typst )))*] \
-      #v(0.3em)
-      #text(size: 9.5pt, style: "italic")[[((( art.summary | typst )))]]
-      #v(1em)
-    ]
-  ((* endfor *))
-]
-
-#pagebreak()
-
-// --- Articles -------------------------------------------------------------
-#set par(first-line-indent: 1.2em, leading: 0.65em)
-#set par(spacing: 0.65em)
+#set par(first-line-indent: 1.2em, leading: u)
+#set par(spacing: u)
 #show figure.caption: it => text(size: 8pt, style: "italic", it.body)
 
 ((* set ns = namespace(prev_cat='') *))
 ((* for art in articles *))
-  
+
   ((* if art.category != ns.prev_cat *))
     #pagebreak(weak: true)
     #align(center)[
-      #v(2em)
-      #text(size: 24pt, weight: "bold", font: "New Computer Modern")[((( art.category | typst )))]
-      #v(0.5em)
+      #v(2 * u)
+      #kicker[Section]
+      #v(0.4 * u)
+      #text(size: 24pt, weight: "bold")[((( art.category | typst )))]
+      #v(0.8 * u)
       #line(length: 100%, stroke: 1.5pt)
-      #v(2em)
+      #v(2.4 * u)
     ]
     ((* set ns.prev_cat = art.category *))
   ((* else *))
-    #v(2.5em)
+    #v(3 * u)
     #align(center)[#line(length: 30%, stroke: 0.5pt)]
-    #v(2.5em)
+    #v(3 * u)
   ((* endif *))
 
-  // Print the Source inside the body, since the Category is now the major section header
-  #sourcelabel([((( art.category | typst )))]) #sym.dot.c #text(size: 9pt, weight: "bold", fill: luma(30%))[((( art.source | typst )))]((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")[((( art.date | typst )))]((* endif *)) #h(1fr) #text(size: 8pt, fill: luma(50%))[((( art.telemetry.formatted_tokens ))) tokens / ((( art.telemetry.formatted_cost )))¢]
+  // Source line: the category is the section header, so show provenance here
+  #kicker[((( art.category | typst )))] #sym.dot.c #text(font: sans, size: 8.5pt, weight: 600)[((( art.source | typst )))]((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")[((( art.date | typst )))]((* endif *)) #h(1fr) #text(font: sans, size: 7.5pt, fill: luma(45%))[((( art.telemetry.formatted_tokens ))) tokens #sym.dot.c ((( art.telemetry.formatted_cost )))¢]
   #articletitle("((( art.url | typst_url )))", [((( art.title | typst )))]) <art((( loop.index )))>
   #articlelede([((( art.summary | typst )))])
 

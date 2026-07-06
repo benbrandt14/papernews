@@ -146,12 +146,17 @@ TODO add more content here.
 Everything visual lives in one file: [`papernews/template.typ.j2`](papernews/template.typ.j2).
 
 - Page size: `width: 203mm, height: 270mm` (tuned for Boox Note Max)
-- Body font: New Computer Modern 11pt
+- Page 1 is a broadsheet cover: blackletter nameplate (Chomsky, OFL,
+  vendored in `papernews/fonts/`), dateline, lead story above a fold
+  rule, a snippet grid of secondary stories below it, and a bottom
+  strip with the quote of the day, world news, and "Did you know…"
+- Kickers/labels set in Libre Franklin (OFL, vendored); body in
+  New Computer Modern (bundled with the Typst compiler)
 - Two-column body for any article over 2000 characters; single-column
   otherwise
 - First-line paragraph indent instead of vertical parskip (classic
   magazine convention)
-- Letter-spacing on small-caps source labels via `tracking`
+- All vertical spacing derives from one rhythm unit (`u`)
 
 Customize whatever you like — the Jinja delimiters are Typst-safe
 (`((* ... *))` for blocks, `((( ... )))` for variables) so your `#`, `{`, and `}` don't fight each other.
