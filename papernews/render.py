@@ -515,8 +515,14 @@ def build_pdf(ctx: RenderContext, out_dir: Path) -> Path:
 
     import typst
 
+    fonts_dir = Path(__file__).parent / "fonts"
+
     try:
-        typst.compile(str(typst_path), output=str(pdf_dst))
+        typst.compile(
+            str(typst_path),
+            output=str(pdf_dst),
+            font_paths=[str(fonts_dir)] if fonts_dir.is_dir() else [],
+        )
     except typst.TypstError as e:
         sys.stderr.write("\n" + "=" * 70 + "\n")
         sys.stderr.write("[FATAL] TYPST COMPILATION FAILED\n")
