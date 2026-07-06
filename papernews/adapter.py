@@ -24,9 +24,7 @@ def article_to_dict(chunk: ArticleChunk) -> dict:
         data["telemetry"]["formatted_tokens"] = chunk.telemetry.formatted_tokens
         data["telemetry"]["formatted_cost"] = chunk.telemetry.formatted_cost
 
-    # Filled in by build_pdf (emission needs the workdir) when the article
-    # carries a structured-IR body; the template falls back to the legacy
-    # typst_body filter when empty.
+    # Filled in by build_pdf — emission needs the workdir for image fetching.
     data["body_typst"] = ""
 
     return data

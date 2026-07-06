@@ -59,7 +59,7 @@ jobs:
           GEMINI_API_KEY: "dummy-key-for-ci"
         run: >
           uv run pytest tests/ -n auto -q --tb=short --disable-warnings
-          --cov=papernews --cov-report=term --cov-fail-under=75
+          --cov=papernews --cov-report=term --cov-fail-under=80
 
       - name: Type Checking
         run: uv run mypy papernews/

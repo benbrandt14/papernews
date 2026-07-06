@@ -1,9 +1,7 @@
 """Tests for the markdown IR (markdown_ir.py) + typed emitter (typst_emit.py).
 
-The parity gate: every input the legacy typst_body path is tested against
-(hostile-string gauntlet, regression corpus, Hypothesis fuzz) must
-parse → emit → compile through the IR path too. The legacy path stays
-until this suite has also proven itself in production runs.
+This is the only render path: the hostile-string gauntlet, the regression
+corpus, and Hypothesis fuzz all gate it (parse → emit → compile).
 """
 
 import json
@@ -233,6 +231,8 @@ def test_ir_regression_corpus_compiles(tmp_path):
     for case in cases:
         out = ir_render(case["input"], tmp_path)
         compile_snippet(out)
+        # The corpus pins expected escaping fidelity, not just compilability.
+        assert case["expected_typst"] in out
 
 
 @given(st.text())

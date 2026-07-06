@@ -150,8 +150,7 @@ class ArticleChunk(BaseModel):
     relative_time: str = ""
     telemetry: Telemetry = Field(default_factory=Telemetry)
     annotations: list[Annotation] = Field(default_factory=list)
-    # Structured body (markdown IR). When non-empty, the renderer uses the
-    # typed emitter instead of the legacy typst_body regex path.
+    # Structured body (markdown IR); the typed emitter renders it.
     blocks: list[Block] = Field(default_factory=list)
     enrichment: Enrichment = Field(default_factory=Enrichment)
 

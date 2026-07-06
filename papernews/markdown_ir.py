@@ -16,17 +16,49 @@ from __future__ import annotations
 import re
 
 from papernews.models import Block, ImageRef, Span
-from papernews.render import (
-    _EMPH_RE,
-    _EMPH_US_RE,
-    _FENCE_RE,
-    _IMAGE_RE,
-    _INLINE_RE,
-    _LINK_RE,
-    _STRONG_RE,
-    _STRONG_US_RE,
-    _strip_leading_metadata,
+
+# --- Markdown syntax (shared vocabulary of the parser) ----------------------
+
+_FENCE_RE = re.compile(r"```[a-zA-Z0-9_+\-]*\s*\n?(.*?)```", re.DOTALL)
+_INLINE_RE = re.compile(r"`([^`\n]+)`")
+
+_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\((https?://[^\)]+)\)")
+_LINK_RE = re.compile(r"(?<!\!)\[([^\]]*)\]\(([^\)]+)\)")
+
+_STRONG_RE = re.compile(r"\*\*(?!\s)(.+?)(?<!\s)\*\*")
+_EMPH_RE = re.compile(r"(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)")
+_STRONG_US_RE = re.compile(r"__(?!\s)(.+?)(?<!\s)__")
+_EMPH_US_RE = re.compile(r"(?<![a-zA-Z0-9_])_(?!\s)(.+?)(?<!\s)_(?![a-zA-Z0-9_])")
+
+_LEADING_DATE_RE = re.compile(
+    r"^\s*("
+    r"\d{1,2}(?:st|nd|rd|th)?\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{2,4}"
+    r"|(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{2,4}"
+    r"|\d{4}[-/]\d{1,2}[-/]\d{1,2}"
+    r")\.?\s*$",
+    re.IGNORECASE | re.MULTILINE,
 )
+
+
+def _strip_leading_metadata(text: str) -> str:
+    """Robustly strips leading LLM hallucinations like dates or redundant article titles."""
+    lines = text.split("\n")
+
+    while lines:
+        first = lines[0].strip()
+        if not first:
+            lines.pop(0)
+            continue
+        if _LEADING_DATE_RE.fullmatch(first):
+            lines.pop(0)
+            continue
+        if re.match(r"^(=+|#+)\s+", first):
+            lines.pop(0)
+            continue
+        break
+
+    return "\n".join(lines)
+
 
 # Display math only — inline math is handled during inline parsing.
 _MATH_DISPLAY_RE = re.compile(r"\$\$(?P<dd>.+?)\$\$|\\\[(?P<br>.+?)\\\]", re.DOTALL)
