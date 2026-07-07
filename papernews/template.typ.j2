@@ -157,24 +157,6 @@
 )
 ((* endif *))
 
-((* if articles | length > 7 *))
-#v(1.2 * u)
-#line(length: 100%, stroke: 0.5pt)
-#v(0.6 * u)
-#kicker[Also in this issue]
-#v(0.5 * u)
-#grid(
-  columns: (1fr, 1fr),
-  column-gutter: 1.6em,
-  row-gutter: 0.6em,
-  ((* for art in articles[7:] *))
-  block(breakable: false)[
-    #set par(first-line-indent: 0pt, justify: false)
-    #text(size: 9pt)[#link(<art((( loop.index + 7 )))>)[((( art.title | truncate(64) | typst )))] #h(1fr) #text(font: sans, size: 7.5pt)[p. #context locate(<art((( loop.index + 7 )))>).page()]]
-  ],
-  ((* endfor *))
-)
-((* endif *))
 ((* endif *))
 
 // --- Bottom strip: quote · world news · did you know -------------------------
@@ -221,6 +203,94 @@
     ],
   )
 ])
+
+#pagebreak()
+
+// ============================================================================
+// PAGE 2 — Front matter: the complete index + the day's funnel
+// ============================================================================
+// The cover only teases the lead and six secondaries; this page is the full
+// map of the edition. Per-source index blocks (e.g. academic scrapers that
+// link more abstracts than they typeset) slot in alongside the funnel.
+
+#kicker[In this issue]
+#v(0.4 * u)
+#text(size: 22pt, weight: "bold")[The Index]
+#v(0.6 * u)
+#line(length: 100%, stroke: 1.2pt)
+#v(0.8 * u)
+
+// --- The funnel: how today's intake was narrowed ------------------------------
+((* if stats.ingested > 0 *))
+#block(breakable: false)[
+  #kicker[The funnel]
+  #v(0.5 * u)
+  #let row(label, count, total) = {
+    let frac = if total > 0 { calc.max(count / total, 0.02) } else { 0.02 }
+    grid(
+      columns: (58pt, 1fr, 30pt),
+      column-gutter: 0.8em,
+      align: (left + horizon, left + horizon, right + horizon),
+      text(font: sans, size: 7pt, tracking: 0.08em, upper(label)),
+      box(width: 100%, height: 5pt, fill: luma(92%), radius: 1pt)[
+        #box(width: frac * 100%, height: 5pt, fill: luma(30%), radius: 1pt)
+      ],
+      text(font: sans, size: 8pt, weight: 600, str(count)),
+    )
+  }
+  #row("Ingested", ((( stats.ingested ))), ((( stats.ingested ))))
+  #v(0.35 * u)
+  #row("Filtered", ((( stats.after_filter ))), ((( stats.ingested ))))
+  #v(0.35 * u)
+  #row("Budgeted", ((( stats.after_budget ))), ((( stats.ingested ))))
+  #v(0.35 * u)
+  #row("Typeset", ((( stats.selected ))), ((( stats.ingested ))))
+  #v(0.4 * u)
+  #text(font: sans, size: 7pt, fill: luma(45%))[
+    ((( stats.ingested - stats.after_filter ))) dropped by deterministic filters
+    #sym.dot.c ((( stats.after_filter - stats.after_budget ))) over category budgets
+    #sym.dot.c ((( stats.after_budget - stats.selected ))) declined by the gatekeeper
+  ]
+]
+#v(1.2 * u)
+#line(length: 100%, stroke: 0.5pt)
+#v(0.8 * u)
+((* endif *))
+
+// --- Curiosity box: questions the paper raised earlier and has now answered ----
+((* if decorations.curiosities *))
+#block(breakable: false, width: 100%, inset: (x: 0.9em, y: 0.8em), stroke: 0.75pt + luma(30%), radius: 2pt)[
+  #kicker[Answered from the queue]
+  #v(0.5 * u)
+  ((* for c in decorations.curiosities *))
+    #text(size: 9pt, style: "italic")[((( c.question | typst )))] \
+    #v(0.1 * u)
+    #text(font: sans, size: 8pt)[#sym.arrow.r #link("((( c.answer_url | typst_url )))")[((( c.answer_title | truncate(80) | typst )))]]
+    ((* if not loop.last *))#v(0.5 * u)((* endif *))
+  ((* endfor *))
+]
+#v(1.2 * u)
+((* endif *))
+
+// --- Complete categorized index ------------------------------------------------
+#columns(2, gutter: 2em)[
+  #set par(first-line-indent: 0pt, justify: false)
+  ((* set ns = namespace(prev='') *))
+  ((* for art in articles *))
+    ((* if art.category != ns.prev *))
+      #v(0.8 * u, weak: true)
+      #kicker[((( art.category | typst )))]
+      #v(0.4 * u, weak: true)
+      ((* set ns.prev = art.category *))
+    ((* endif *))
+    #block(breakable: false)[
+      #text(size: 9.5pt)[#link(<art((( loop.index )))>)[((( art.title | typst )))]] #h(1fr) #text(font: sans, size: 7.5pt)[p. #context locate(<art((( loop.index )))>).page()] \
+      #v(0.15 * u)
+      #text(font: sans, size: 7pt, tracking: 0.06em, fill: luma(40%))[#upper[((( art.source | typst )))]]((* if art.summary *)) #text(size: 8.5pt, style: "italic", fill: luma(30%))[ — ((( art.summary | truncate(90) | typst )))]((* endif *))
+    ]
+    #v(0.6 * u)
+  ((* endfor *))
+]
 
 #pagebreak()
 

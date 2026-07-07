@@ -115,3 +115,58 @@ def test_build_pdf_parses_blocks_for_bodies_without_ir(tmp_path):
     assert pdf.exists()
     typ = (tmp_path / ".build" / "2026-01-01.typ").read_text()
     assert "#strong[bold]/**/" in typ
+
+
+def test_build_pdf_renders_frontmatter_index_with_funnel(tmp_path):
+    """The front-matter index page carries the triage-funnel telemetry and a
+    categorized index of the edition's articles."""
+    from papernews.models import ArticleChunk, FunnelStats
+
+    arts = [
+        ArticleChunk(
+            category="Science",
+            source="example.com",
+            title=f"Discovery Number {i}",
+            summary="A concise summary of what happened in the field.",
+            body_markdown="Body paragraph with detail.",
+            url=f"https://example.com/{i}",
+        )
+        for i in range(3)
+    ]
+    ctx = _ctx(
+        articles=arts,
+        lead_article_index=0,
+        stats=FunnelStats(ingested=142, after_filter=38, after_budget=14, selected=3),
+    )
+    pdf = build_pdf(ctx, tmp_path)
+    assert pdf.exists()
+    typ = (tmp_path / ".build" / "2026-01-01.typ").read_text()
+
+    # Funnel counts surface on the index page.
+    assert "The Index" in typ
+    assert "142" in typ and "38" in typ and "14" in typ
+    # Secondary stories appear in the categorized index.
+    assert "Discovery Number 1" in typ
+
+
+def test_build_pdf_renders_curiosity_box(tmp_path):
+    """Answered questions from the curiosity queue render as a front-matter box."""
+    from papernews.models import Curiosity, FrontpageDecorations
+
+    ctx = _ctx(
+        decorations=FrontpageDecorations(
+            curiosities=[
+                Curiosity(
+                    question="Why do neutron stars glitch?",
+                    answer_title="Superfluid vortex unpinning in pulsars",
+                    answer_url="https://doi.org/10.1234/abc",
+                )
+            ]
+        ),
+    )
+    pdf = build_pdf(ctx, tmp_path)
+    assert pdf.exists()
+    typ = (tmp_path / ".build" / "2026-01-01.typ").read_text()
+    assert "Answered from the queue" in typ
+    assert "Why do neutron stars glitch?" in typ
+    assert "https://doi.org/10.1234/abc" in typ

@@ -3,6 +3,7 @@ from papernews.models import (
     Annotation,
     ArticleChunk,
     FrontpageDecorations,
+    FunnelStats,
     Quote,
     RenderContext,
     Telemetry,
@@ -97,11 +98,20 @@ def test_render_context_to_template_vars():
             quote=Quote(text="Words.", author="Someone"),
             dyk=["a fact"],
         ),
+        stats=FunnelStats(ingested=142, after_filter=38, after_budget=14, selected=9),
     )
 
     variables = render_context_to_template_vars(ctx)
 
     assert variables["date"] == "2026-07-05"
+
+    # Triage-funnel telemetry is exposed to the front-matter index page.
+    assert variables["stats"] == {
+        "ingested": 142,
+        "after_filter": 38,
+        "after_budget": 14,
+        "selected": 9,
+    }
     deco = variables["decorations"]
     assert deco["generation_time"] == "Jul 05, 2026 at 07:00 AM"
     assert deco["total_tokens"] == "1.5k"

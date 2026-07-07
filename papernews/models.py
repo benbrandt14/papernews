@@ -40,6 +40,16 @@ class LLMArticleSummary(BaseModel):
     )
 
 
+class LLMOpenQuestions(BaseModel):
+    questions: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Up to three specific, researchable questions a curious reader "
+            "would want answered after reading the article."
+        ),
+    )
+
+
 class Telemetry(BaseModel):
     prompt_tokens: int = 0
     output_tokens: int = 0
@@ -78,6 +88,19 @@ class Quote(BaseModel):
     author: str = "Anonymous"
 
 
+class Curiosity(BaseModel):
+    """A once-open reader question the pipeline has since answered.
+
+    Questions are raised during enrichment, parked in the curiosity queue,
+    and resolved on a later run via a literature lookup. The answered pairs
+    surface on the front matter so the paper visibly follows up on itself.
+    """
+
+    question: str
+    answer_title: str
+    answer_url: str
+
+
 class FrontpageDecorations(BaseModel):
     world_news: list[str] = Field(
         default_factory=lambda: ["World news currently unavailable."],
@@ -87,6 +110,10 @@ class FrontpageDecorations(BaseModel):
     dyk: list[str] = Field(
         default_factory=list,
         description="'Did you know...' facts for the front page.",
+    )
+    curiosities: list[Curiosity] = Field(
+        default_factory=list,
+        description="Answered questions surfaced from the curiosity queue.",
     )
 
 
@@ -155,6 +182,19 @@ class ArticleChunk(BaseModel):
     enrichment: Enrichment = Field(default_factory=Enrichment)
 
 
+class FunnelStats(BaseModel):
+    """How the triage funnel narrowed the day's intake.
+
+    Rendered on the front-matter index page so the filtering process is
+    visible in the finished paper, not just in logs.
+    """
+
+    ingested: int = 0
+    after_filter: int = 0
+    after_budget: int = 0
+    selected: int = 0
+
+
 class RenderContext(BaseModel):
     """Everything the Typst template needs for one edition.
 
@@ -168,5 +208,6 @@ class RenderContext(BaseModel):
     total_cost: str
     articles: list[ArticleChunk] = Field(default_factory=list)
     decorations: FrontpageDecorations = Field(default_factory=FrontpageDecorations)
+    stats: FunnelStats = Field(default_factory=FunnelStats)
     # Index into `articles` of the front-page lead story (design refresh hook).
     lead_article_index: int | None = None

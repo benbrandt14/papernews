@@ -28,7 +28,7 @@ from papernews.core.main import (
     triage_process_a_filter,
     triage_process_b_rank,
 )
-from papernews.models import FrontpageDecorations, Telemetry
+from papernews.models import FrontpageDecorations, FunnelStats, Telemetry
 from papernews.plugins import rss_plugin
 
 
@@ -119,7 +119,15 @@ def test_e2e_gauntlet(mocker, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     pdf_path = stage5_bespoke_render.fn(
-        articles=articles, total_telemetry=telemetry, decorations=decorations
+        articles=articles,
+        total_telemetry=telemetry,
+        decorations=decorations,
+        stats=FunnelStats(
+            ingested=len(articles) + 4,
+            after_filter=len(articles) + 2,
+            after_budget=len(articles) + 1,
+            selected=len(articles),
+        ),
     )
 
     typst_path = (

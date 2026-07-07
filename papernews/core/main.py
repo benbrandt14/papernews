@@ -17,6 +17,7 @@ from papernews.markdown_ir import parse_markdown
 from papernews.models import (
     ArticleChunk,
     FrontpageDecorations,
+    FunnelStats,
     RawDocument,
     RenderContext,
     Telemetry,
@@ -252,6 +253,7 @@ def stage5_bespoke_render(
     articles: list[ArticleChunk],
     total_telemetry: Telemetry,
     decorations: FrontpageDecorations,
+    stats: FunnelStats,
 ) -> Path:
     settings = get_settings()
     out_dir = settings.output
@@ -264,6 +266,7 @@ def stage5_bespoke_render(
         total_cost=total_telemetry.formatted_cost,
         articles=articles,
         decorations=decorations,
+        stats=stats,
         lead_article_index=0 if articles else None,
     )
 
@@ -288,7 +291,14 @@ def run_papernews(config: AppConfig) -> Path:
 
     decorations = stage4b_fetch_decorations(config)
 
-    pdf_path = stage5_bespoke_render(enriched, total_telemetry, decorations)
+    stats = FunnelStats(
+        ingested=len(raw_docs),
+        after_filter=len(filtered),
+        after_budget=len(budgeted),
+        selected=len(enriched),
+    )
+
+    pdf_path = stage5_bespoke_render(enriched, total_telemetry, decorations, stats)
 
     return pdf_path
 

@@ -78,13 +78,14 @@ def test_fetch_sources_end_to_end_through_registry(mocker):
     assert docs[0].category == "Sci"
 
 
-def test_fetch_decorations_through_registry(mocker):
+def test_fetch_decorations_through_registry(mocker, tmp_path, monkeypatch):
     class WikiResp:
         text = '<div class="current-events-content"><li>News item. [1]</li></div>'
 
         def raise_for_status(self):
             pass
 
+    monkeypatch.setenv("PAPERNEWS_STATE", str(tmp_path / "state.db"))
     mocker.patch("papernews.plugins.wiki_plugin.get_run_logger")
     mocker.patch("papernews.plugins.wiki_plugin.requests.get", return_value=WikiResp())
     # Keep the QOTD/DYK sub-fetches off the network in this wiring test.
@@ -94,10 +95,11 @@ def test_fetch_decorations_through_registry(mocker):
     pm = get_plugin_manager()
     results = pm.hook.fetch_decorations(source_config=AppConfig())
 
-    assert len(results) == 1
-    assert isinstance(results[0], FrontpageDecorations)
-    assert results[0].world_news == ["News item."]
-    assert results[0].quote is not None  # placeholder quote present
+    # Both decoration producers (wiki + curiosity) answer the hook.
+    assert all(isinstance(r, FrontpageDecorations) for r in results)
+    wiki = next(r for r in results if r.world_news == ["News item."])
+    assert wiki.world_news == ["News item."]
+    assert wiki.quote is not None  # placeholder quote present
 
 
 def test_enrich_articles_hook_fires_custom_plugin(tmp_path, monkeypatch):
