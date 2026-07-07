@@ -21,6 +21,7 @@ def get_plugin_manager() -> pluggy.PluginManager:
         curiosity_plugin,
         hn_plugin,
         rss_plugin,
+        salience_plugin,
         wiki_plugin,
     )
 
@@ -28,6 +29,7 @@ def get_plugin_manager() -> pluggy.PluginManager:
     pm.register(hn_plugin)
     pm.register(wiki_plugin)
     pm.register(curiosity_plugin)
+    pm.register(salience_plugin)
 
     pm.check_pending()
     return pm
