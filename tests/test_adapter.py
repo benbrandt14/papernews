@@ -98,9 +98,7 @@ def test_render_context_to_template_vars():
             quote=Quote(text="Words.", author="Someone"),
             dyk=["a fact"],
         ),
-        stats=FunnelStats(
-            ingested=142, after_filter=38, after_budget=14, selected=9
-        ),
+        stats=FunnelStats(ingested=142, after_filter=38, after_budget=14, selected=9),
     )
 
     variables = render_context_to_template_vars(ctx)

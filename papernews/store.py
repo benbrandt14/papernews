@@ -19,6 +19,20 @@ MIGRATIONS: list[str] = [
         reason TEXT
     );
     """,
+    # 2: curiosity queue — open reader questions raised during enrichment,
+    # later resolved against the literature and surfaced on the front matter.
+    """
+    CREATE TABLE IF NOT EXISTS curiosity_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question TEXT NOT NULL UNIQUE,
+        article_url TEXT,
+        created_date TEXT NOT NULL,
+        answered_date TEXT,
+        answer_title TEXT,
+        answer_url TEXT,
+        status TEXT NOT NULL DEFAULT 'open'
+    );
+    """,
 ]
 
 
@@ -64,3 +78,60 @@ class SimpleStore:
                 "INSERT OR REPLACE INTO llm_cache (id, response) VALUES (?, ?)",
                 (cache_key, response),
             )
+
+    # --- Curiosity queue ------------------------------------------------------
+
+    def add_question(self, question: str, article_url: str, created_date: str) -> None:
+        """Park an open reader question. Duplicate questions are ignored so a
+        recurring topic doesn't accumulate identical rows."""
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO curiosity_queue "
+                "(question, article_url, created_date, status) "
+                "VALUES (?, ?, ?, 'open')",
+                (question, article_url, created_date),
+            )
+
+    def open_questions(self, before: str | None = None) -> list[tuple[int, str]]:
+        """Still-unanswered questions as (id, question) pairs.
+
+        Pass `before` (an ISO date) to return only questions raised on an
+        earlier run — the resolver waits a day before chasing a question so
+        it isn't looked up in the same edition that raised it.
+        """
+        sql = "SELECT id, question FROM curiosity_queue WHERE status = 'open'"
+        params: tuple = ()
+        if before is not None:
+            sql += " AND created_date < ?"
+            params = (before,)
+        sql += " ORDER BY id"
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+            return [(int(r[0]), str(r[1])) for r in rows]
+
+    def mark_answered(
+        self,
+        question_id: int,
+        answered_date: str,
+        answer_title: str,
+        answer_url: str,
+    ) -> None:
+        """Resolve a queued question with the work that answers it."""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE curiosity_queue SET status = 'answered', "
+                "answered_date = ?, answer_title = ?, answer_url = ? "
+                "WHERE id = ?",
+                (answered_date, answer_title, answer_url, question_id),
+            )
+
+    def recently_answered(self, limit: int = 3) -> list[tuple[str, str, str]]:
+        """Most recently resolved questions as (question, title, url) tuples."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT question, answer_title, answer_url FROM curiosity_queue "
+                "WHERE status = 'answered' ORDER BY answered_date DESC, id DESC "
+                "LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [(str(r[0]), str(r[1]), str(r[2])) for r in rows]

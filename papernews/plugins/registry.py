@@ -17,11 +17,17 @@ def get_plugin_manager() -> pluggy.PluginManager:
     pm = pluggy.PluginManager("papernews")
     pm.add_hookspecs(hookspecs.PapernewsSpec)
 
-    from papernews.plugins import hn_plugin, rss_plugin, wiki_plugin
+    from papernews.plugins import (
+        curiosity_plugin,
+        hn_plugin,
+        rss_plugin,
+        wiki_plugin,
+    )
 
     pm.register(rss_plugin)
     pm.register(hn_plugin)
     pm.register(wiki_plugin)
+    pm.register(curiosity_plugin)
 
     pm.check_pending()
     return pm

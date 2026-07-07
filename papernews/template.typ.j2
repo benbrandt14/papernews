@@ -257,6 +257,21 @@
 #v(0.8 * u)
 ((* endif *))
 
+// --- Curiosity box: questions the paper raised earlier and has now answered ----
+((* if decorations.curiosities *))
+#block(breakable: false, width: 100%, inset: (x: 0.9em, y: 0.8em), stroke: 0.75pt + luma(30%), radius: 2pt)[
+  #kicker[Answered from the queue]
+  #v(0.5 * u)
+  ((* for c in decorations.curiosities *))
+    #text(size: 9pt, style: "italic")[((( c.question | typst )))] \
+    #v(0.1 * u)
+    #text(font: sans, size: 8pt)[#sym.arrow.r #link("((( c.answer_url | typst_url )))")[((( c.answer_title | truncate(80) | typst )))]]
+    ((* if not loop.last *))#v(0.5 * u)((* endif *))
+  ((* endfor *))
+]
+#v(1.2 * u)
+((* endif *))
+
 // --- Complete categorized index ------------------------------------------------
 #columns(2, gutter: 2em)[
   #set par(first-line-indent: 0pt, justify: false)

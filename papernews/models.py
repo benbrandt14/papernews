@@ -40,6 +40,16 @@ class LLMArticleSummary(BaseModel):
     )
 
 
+class LLMOpenQuestions(BaseModel):
+    questions: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Up to three specific, researchable questions a curious reader "
+            "would want answered after reading the article."
+        ),
+    )
+
+
 class Telemetry(BaseModel):
     prompt_tokens: int = 0
     output_tokens: int = 0
@@ -78,6 +88,19 @@ class Quote(BaseModel):
     author: str = "Anonymous"
 
 
+class Curiosity(BaseModel):
+    """A once-open reader question the pipeline has since answered.
+
+    Questions are raised during enrichment, parked in the curiosity queue,
+    and resolved on a later run via a literature lookup. The answered pairs
+    surface on the front matter so the paper visibly follows up on itself.
+    """
+
+    question: str
+    answer_title: str
+    answer_url: str
+
+
 class FrontpageDecorations(BaseModel):
     world_news: list[str] = Field(
         default_factory=lambda: ["World news currently unavailable."],
@@ -87,6 +110,10 @@ class FrontpageDecorations(BaseModel):
     dyk: list[str] = Field(
         default_factory=list,
         description="'Did you know...' facts for the front page.",
+    )
+    curiosities: list[Curiosity] = Field(
+        default_factory=list,
+        description="Answered questions surfaced from the curiosity queue.",
     )
 
 

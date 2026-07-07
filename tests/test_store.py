@@ -44,3 +44,28 @@ def test_wal_mode_enabled(tmp_path):
     store = SimpleStore(str(tmp_path / "state.db"))
     with sqlite3.connect(store.db_path) as conn:
         assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+
+
+def test_curiosity_queue_roundtrip(tmp_path):
+    store = SimpleStore(str(tmp_path / "state.db"))
+
+    store.add_question("Why is the sky blue?", "https://a", "2026-07-01")
+    store.add_question("What is dark matter?", "https://b", "2026-07-01")
+    # Duplicate question is ignored, not a second row.
+    store.add_question("Why is the sky blue?", "https://a", "2026-07-02")
+
+    open_qs = store.open_questions()
+    assert [q for _id, q in open_qs] == [
+        "Why is the sky blue?",
+        "What is dark matter?",
+    ]
+    assert store.recently_answered() == []
+
+    sky_id = open_qs[0][0]
+    store.mark_answered(sky_id, "2026-07-03", "Rayleigh scattering", "https://doi/1")
+
+    # Answered rows leave the open set and appear in recently_answered.
+    assert [q for _id, q in store.open_questions()] == ["What is dark matter?"]
+    assert store.recently_answered() == [
+        ("Why is the sky blue?", "Rayleigh scattering", "https://doi/1")
+    ]

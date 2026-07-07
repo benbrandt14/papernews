@@ -136,9 +136,7 @@ def test_build_pdf_renders_frontmatter_index_with_funnel(tmp_path):
     ctx = _ctx(
         articles=arts,
         lead_article_index=0,
-        stats=FunnelStats(
-            ingested=142, after_filter=38, after_budget=14, selected=3
-        ),
+        stats=FunnelStats(ingested=142, after_filter=38, after_budget=14, selected=3),
     )
     pdf = build_pdf(ctx, tmp_path)
     assert pdf.exists()
@@ -149,3 +147,26 @@ def test_build_pdf_renders_frontmatter_index_with_funnel(tmp_path):
     assert "142" in typ and "38" in typ and "14" in typ
     # Secondary stories appear in the categorized index.
     assert "Discovery Number 1" in typ
+
+
+def test_build_pdf_renders_curiosity_box(tmp_path):
+    """Answered questions from the curiosity queue render as a front-matter box."""
+    from papernews.models import Curiosity, FrontpageDecorations
+
+    ctx = _ctx(
+        decorations=FrontpageDecorations(
+            curiosities=[
+                Curiosity(
+                    question="Why do neutron stars glitch?",
+                    answer_title="Superfluid vortex unpinning in pulsars",
+                    answer_url="https://doi.org/10.1234/abc",
+                )
+            ]
+        ),
+    )
+    pdf = build_pdf(ctx, tmp_path)
+    assert pdf.exists()
+    typ = (tmp_path / ".build" / "2026-01-01.typ").read_text()
+    assert "Answered from the queue" in typ
+    assert "Why do neutron stars glitch?" in typ
+    assert "https://doi.org/10.1234/abc" in typ
