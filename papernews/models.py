@@ -155,6 +155,19 @@ class ArticleChunk(BaseModel):
     enrichment: Enrichment = Field(default_factory=Enrichment)
 
 
+class FunnelStats(BaseModel):
+    """How the triage funnel narrowed the day's intake.
+
+    Rendered on the front-matter index page so the filtering process is
+    visible in the finished paper, not just in logs.
+    """
+
+    ingested: int = 0
+    after_filter: int = 0
+    after_budget: int = 0
+    selected: int = 0
+
+
 class RenderContext(BaseModel):
     """Everything the Typst template needs for one edition.
 
@@ -168,5 +181,6 @@ class RenderContext(BaseModel):
     total_cost: str
     articles: list[ArticleChunk] = Field(default_factory=list)
     decorations: FrontpageDecorations = Field(default_factory=FrontpageDecorations)
+    stats: FunnelStats = Field(default_factory=FunnelStats)
     # Index into `articles` of the front-page lead story (design refresh hook).
     lead_article_index: int | None = None

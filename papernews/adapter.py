@@ -48,5 +48,6 @@ def render_context_to_template_vars(ctx: RenderContext) -> dict:
         "date": ctx.date,
         "articles": [article_to_dict(a) for a in ctx.articles],
         "decorations": decorations,
+        "stats": ctx.stats.model_dump(),
         "lead_article_index": ctx.lead_article_index,
     }
