@@ -33,6 +33,24 @@ MIGRATIONS: list[str] = [
         status TEXT NOT NULL DEFAULT 'open'
     );
     """,
+    # 3: entity knowledge graph — named entities and the articles that mention
+    # them, accreting across editions so recurring entities can be interlinked
+    # (and, later, trended).
+    """
+    CREATE TABLE IF NOT EXISTS entities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key TEXT NOT NULL UNIQUE,
+        surface TEXT NOT NULL,
+        first_seen_date TEXT NOT NULL,
+        mention_count INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS entity_mentions (
+        entity_id INTEGER NOT NULL REFERENCES entities(id),
+        article_url TEXT NOT NULL,
+        edition_date TEXT NOT NULL,
+        UNIQUE(entity_id, article_url)
+    );
+    """,
 ]
 
 
@@ -135,3 +153,44 @@ class SimpleStore:
                 (limit,),
             ).fetchall()
             return [(str(r[0]), str(r[1]), str(r[2])) for r in rows]
+
+    # --- Entity knowledge graph ----------------------------------------------
+
+    def record_entity_mention(
+        self, key: str, surface: str, article_url: str, edition_date: str
+    ) -> None:
+        """Upsert an entity and note that `article_url` mentioned it.
+
+        `mention_count` counts distinct articles across all editions; the
+        UNIQUE(entity_id, article_url) constraint keeps re-runs of the same
+        edition idempotent.
+        """
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO entities (key, surface, first_seen_date, mention_count) "
+                "VALUES (?, ?, ?, 0) ON CONFLICT(key) DO NOTHING",
+                (key, surface, edition_date),
+            )
+            row = conn.execute(
+                "SELECT id FROM entities WHERE key = ?", (key,)
+            ).fetchone()
+            entity_id = int(row[0])
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO entity_mentions "
+                "(entity_id, article_url, edition_date) VALUES (?, ?, ?)",
+                (entity_id, article_url, edition_date),
+            )
+            if cur.rowcount:
+                conn.execute(
+                    "UPDATE entities SET mention_count = mention_count + 1 "
+                    "WHERE id = ?",
+                    (entity_id,),
+                )
+
+    def entity_mention_count(self, key: str) -> int:
+        """Total distinct articles that have ever mentioned this entity."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT mention_count FROM entities WHERE key = ?", (key,)
+            ).fetchone()
+            return int(row[0]) if row else 0

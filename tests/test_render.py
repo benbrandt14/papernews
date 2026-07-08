@@ -170,3 +170,44 @@ def test_build_pdf_renders_curiosity_box(tmp_path):
     assert "Answered from the queue" in typ
     assert "Why do neutron stars glitch?" in typ
     assert "https://doi.org/10.1234/abc" in typ
+
+
+def test_build_pdf_resolves_entity_interlinks(tmp_path):
+    """An entity span linking to another article's <artN> anchor must compile —
+    proving the emitter's internal links resolve against the real template."""
+    from papernews.config import AppConfig
+    from papernews.markdown_ir import parse_markdown
+    from papernews.models import ArticleChunk
+    from papernews.plugins import entity_plugin
+    from papernews.store import SimpleStore
+
+    a0 = ArticleChunk(
+        category="Space",
+        source="example.com",
+        title="Deep dive",
+        summary="s",
+        body_markdown=(
+            "The James Webb Space Telescope resolved a faint galaxy. "
+            "The James Webb Space Telescope imaged a second target too."
+        ),
+        url="https://example.com/0",
+    )
+    a1 = ArticleChunk(
+        category="Space",
+        source="example.com",
+        title="Brief",
+        summary="s",
+        body_markdown="Elsewhere, the James Webb Space Telescope data went public.",
+        url="https://example.com/1",
+    )
+    for art in (a0, a1):
+        art.blocks = parse_markdown(art.body_markdown)
+    entity_plugin.enrich_articles(
+        [a0, a1], AppConfig(), SimpleStore(str(tmp_path / "state.db"))
+    )
+
+    pdf = build_pdf(_ctx(articles=[a0, a1], lead_article_index=0), tmp_path)
+    assert pdf.exists()
+    assert pdf.read_bytes()[:4] == b"%PDF"
+    typ = (tmp_path / ".build" / "2026-01-01.typ").read_text()
+    assert "#link(<art1>)" in typ
