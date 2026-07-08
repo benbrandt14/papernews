@@ -3,9 +3,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-# Fixed Pricing Constants ($, Gemini 2.5 Flash)
-COST_PER_1M_PROMPT = 0.075
-COST_PER_1M_OUTPUT = 0.30
+# Approximate pricing ($ per 1M tokens) for the default provider (DeepSeek
+# deepseek-chat, cache-miss rates). Token counts come from the API and are
+# exact; only this cost estimate is provider-dependent — edit if you switch.
+COST_PER_1M_PROMPT = 0.27
+COST_PER_1M_OUTPUT = 1.10
 
 
 class Annotation(BaseModel):

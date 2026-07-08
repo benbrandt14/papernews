@@ -6,7 +6,7 @@ An offline-first, highly customized E-Ink daily digest. A Prefect pipeline pulls
 
 1. **Stage 1: Ingestion** — Dynamically loads plugins (RSS, Hacker News, Wiki). Outputs strict Pydantic `RawDocument` models.
 2. **Stage 2: Filtering** — Enforces deterministic category limits, local ranking heuristics, and regex blacklists natively in Python (zero API cost).
-3. **Stage 3: LLM Handling** — Routes surviving documents to the configured backend (Gemini, or a local Ollama model) for gatekeeper selection, summarization, and strict markdown formatting. Enforces Pydantic schema validation and tracks token `Telemetry`. Article bodies are parsed into the markdown IR (`Block`/`Span`) here.
+3. **Stage 3: LLM Handling** — Routes surviving documents to the configured provider (any OpenAI-compatible API; DeepSeek by default, OpenRouter or a local Ollama/vLLM server by env switch) for gatekeeper selection, summarization, and strict markdown formatting. Enforces Pydantic schema validation and tracks token `Telemetry`. Article bodies are parsed into the markdown IR (`Block`/`Span`) here.
 4. **Stage 3.5: Enrichment** — A whole-day, cross-article pass (`enrich_articles` plugins) that attaches sidecar data in place. The **curiosity queue** lives here: it asks the LLM for a few researchable questions per lead story, parks them in SQLite, and resolves *earlier* runs' questions against the OpenAlex corpus — answered pairs surface on the front matter.
 5. **Stage 4: Templating** — The adapter (`adapter.py`) flattens the typed `RenderContext` into the plain dictionaries the template consumes, keeping layout logic strictly decoupled.
 6. **Stage 5: Render** — Jinja injects the adapted data into a Typst template (`template.typ.j2`); the typed emitter (`typst_emit.emit_blocks`) turns the markdown IR into Typst, escaping exactly once with no sentinel tokens.
@@ -43,13 +43,13 @@ Ingestion is decoupled via `pluggy`.
 
 ## Docker & API Structure
 
-**Prerequisites:** Docker and a Gemini API key.
+**Prerequisites:** Docker and a DeepSeek API key (or any OpenAI-compatible provider).
 
 ```bash
 git clone [https://github.com/benbrandt14/papernews](https://github.com/benbrandt14/papernews)
 cd papernews
 cp .env.example .env
-# Edit .env and add your GEMINI_API_KEY
+# Edit .env and add your DEEPSEEK_API_KEY (or switch PAPERNEWS_LLM_PROVIDER)
 docker compose up --build -d
 
 ```

@@ -23,7 +23,7 @@ Papernews enforces a strict boundary between data processing and presentation.
 * **Strict Typing:** All data flowing through the pipeline is validated by Pydantic (`RawDocument`, `ArticleChunk`, `Telemetry`, `RenderContext`). Tasks must not mutate their inputs; return updated copies (`model_copy`).
 
 ### LLM Integration (Backends)
-* All model calls go through the `LLMBackend` protocol (`papernews/core/backends.py`) — Gemini by default, Ollama via `PAPERNEWS_LLM_BACKEND=local`. The SQLite response cache sits above the backend in `router._cached_structured_call`; backends stay dumb transport wrappers.
+* All model calls go through the `LLMBackend` protocol (`papernews/core/backends.py`) — a single OpenAI-compatible transport (`requests`) over any provider. Providers are presets (base URL + key env + default model) chosen by `PAPERNEWS_LLM_PROVIDER` (default `deepseek`; also `openrouter`, `local`), or point `PAPERNEWS_LLM_BASE_URL`/`_API_KEY`/`_MODEL` at any other OpenAI-compatible endpoint. Structured output uses JSON mode + schema-in-prompt, validated by the router. The SQLite response cache sits above the backend in `router._cached_structured_call`; backends stay dumb transport wrappers.
 * **Function-as-a-Service:** The LLM's scope is limited to gatekeeping (boolean classification), summarization, and markdown formatting.
 * **Data Determinism:** Do not pass deterministic metadata (URLs, timestamps, authors) to the LLM to echo back. Manage deterministic data natively in Python.
 * **Immutable Telemetry:** Every LLM invocation returns a populated `Telemetry`; aggregate cumulatively, attributing rejected documents' costs to the run total.

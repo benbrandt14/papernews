@@ -18,7 +18,7 @@ HOSTILE_STRINGS = [
     ]
 ]
 
-os.environ["GEMINI_API_KEY"] = "fake-key-for-tests"
+os.environ["DEEPSEEK_API_KEY"] = "fake-key-for-tests"
 from datetime import date
 
 from papernews.config import AppConfig, Preferences
@@ -58,7 +58,7 @@ def test_e2e_gauntlet(mocker, tmp_path, monkeypatch):
     monkeypatch.setenv("PREFECT_API_URL", "")
     monkeypatch.setenv("PREFECT_SERVER_ALLOW_EPHEMERAL_MODE", "false")
     monkeypatch.setenv("PREFECT_TEST_MODE", "true")
-    monkeypatch.setenv("GEMINI_API_KEY", "fake-key-for-tests")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-key-for-tests")
 
     entries = [
         StubEntry(

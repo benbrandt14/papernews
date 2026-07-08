@@ -3,7 +3,6 @@ from collections.abc import Callable
 from functools import lru_cache
 
 import requests
-from google.genai import errors as genai_errors
 from prefect import get_run_logger, task
 from prefect.context import TaskRunContext
 from pydantic import BaseModel
@@ -34,9 +33,12 @@ def _is_transient(exc: Exception) -> bool:
     """Errors worth retrying: network trouble and 5xx/429 API responses."""
     if isinstance(exc, ConnectionError | TimeoutError | requests.RequestException):
         return True
-    if isinstance(exc, genai_errors.ServerError):
-        return True
-    return getattr(exc, "code", None) in _TRANSIENT_CODES
+    # A status code may sit on the exception (`.code`) or, for requests'
+    # HTTPError, on its response.
+    code = getattr(exc, "code", None) or getattr(
+        getattr(exc, "response", None), "status_code", None
+    )
+    return code in _TRANSIENT_CODES
 
 
 def _retries_remaining() -> bool:

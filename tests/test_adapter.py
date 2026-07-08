@@ -54,9 +54,13 @@ def test_article_to_dict_conversion():
     assert data["telemetry"]["output_tokens"] == 500
     assert data["telemetry"]["formatted_tokens"] == "2.0k"
 
-    # 1500 prompt * $0.075/1M + 500 output * $0.30/1M = $0.0001125 + $0.00015 = $0.0002625
-    # * 100 = 0.02625 cents (< 0.05)
-    assert data["telemetry"]["formatted_cost"] == "~ 0"
+    # Cost is derived from the provider price constants; assert the formatting
+    # logic rather than a provider-specific number.
+    from papernews.models import COST_PER_1M_OUTPUT, COST_PER_1M_PROMPT
+
+    cents = (1500 / 1e6 * COST_PER_1M_PROMPT + 500 / 1e6 * COST_PER_1M_OUTPUT) * 100
+    expected = "~ 0" if cents < 0.05 else f"{cents:.3f}"
+    assert data["telemetry"]["formatted_cost"] == expected
 
 
 def test_article_to_dict_cost_formatting():
@@ -70,8 +74,11 @@ def test_article_to_dict_cost_formatting():
         telemetry=Telemetry(prompt_tokens=1_000_000, output_tokens=1_000_000),
     )
     data = article_to_dict(chunk)
-    # 1M prompt = $0.075, 1M output = $0.30 => Total $0.375 => 37.5 cents
-    assert data["telemetry"]["formatted_cost"] == "37.500"
+    # 1M prompt + 1M output at the provider's per-1M rates, in cents.
+    from papernews.models import COST_PER_1M_OUTPUT, COST_PER_1M_PROMPT
+
+    cents = (COST_PER_1M_PROMPT + COST_PER_1M_OUTPUT) * 100
+    assert data["telemetry"]["formatted_cost"] == f"{cents:.3f}"
 
 
 def test_render_context_to_template_vars():
