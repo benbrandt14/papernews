@@ -11,7 +11,6 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "apscheduler>=3.10",
-    "google-genai>=0.2.0",
     "pydantic>=2.7",
     "pydantic-settings>=2.4",
     "typst>=0.11.0",
@@ -46,6 +45,11 @@ dev = [
 # Enable Pyflakes (F), pycodestyle (E), isort (I), and pyupgrade (UP)
 lint.select = ["E", "F", "I", "UP"]
 lint.ignore = ["E501", "E402"]
+
+[tool.pytest.ini_options]
+# Terse by default: a one-line traceback and no warning spam keep test output
+# (and the tokens spent reading it) small. Pass -vv / --tb=long when debugging.
+addopts = "-q --tb=line --disable-warnings"
 
 [tool.mypy]
 # Global options:

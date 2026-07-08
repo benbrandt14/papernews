@@ -93,8 +93,14 @@ class Settings(BaseSettings):
     output: Path = Path("output")
     state: Path = Path("data/state.db")
     llm_enabled: bool = False
-    llm_backend: Literal["gemini", "local"] = "gemini"
-    llm_model: str = "gemini-2.5-flash"
+    # Provider preset name (see backends.PROVIDERS), e.g. "deepseek",
+    # "openrouter", "local". Switching providers is a one-env-var change.
+    llm_provider: str = "deepseek"
+    # Overrides: leave blank to use the provider preset's defaults. Setting
+    # base_url/api_key lets any OpenAI-compatible endpoint work without a preset.
+    llm_model: str = ""
+    llm_base_url: str | None = None
+    llm_api_key: str | None = None
 
 
 def get_settings() -> Settings:

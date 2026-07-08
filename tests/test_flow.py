@@ -11,7 +11,7 @@ import os
 import pytest
 import requests
 
-os.environ.setdefault("GEMINI_API_KEY", "fake-key-for-tests")
+os.environ.setdefault("DEEPSEEK_API_KEY", "fake-key-for-tests")
 
 from prefect.testing.utilities import prefect_test_harness  # noqa: E402
 

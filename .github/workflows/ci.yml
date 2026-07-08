@@ -48,7 +48,7 @@ jobs:
       - name: Import Smoke (every shipped module must import)
         env:
           PAPERNEWS_NO_SCHED: "1"
-          GEMINI_API_KEY: "dummy-key-for-ci"
+          DEEPSEEK_API_KEY: "dummy-key-for-ci"
         run: uv run python -c "import papernews.serve, papernews.core.main, papernews.__main__"
 
       - name: The Test Gauntlet
@@ -56,7 +56,7 @@ jobs:
           PREFECT_TEST_MODE: "true"
           PREFECT_SERVER_ALLOW_EPHEMERAL_MODE: "false"
           PREFECT_API_URL: ""
-          GEMINI_API_KEY: "dummy-key-for-ci"
+          DEEPSEEK_API_KEY: "dummy-key-for-ci"
         run: >
           uv run pytest tests/ -n auto -q --tb=short --disable-warnings
           --cov=papernews --cov-report=term --cov-fail-under=80
@@ -78,7 +78,7 @@ jobs:
         run: |
           docker run -d --name papernews-ci \
             -e PAPERNEWS_NO_SCHED=1 \
-            -e GEMINI_API_KEY=dummy-key-for-ci \
+            -e DEEPSEEK_API_KEY=dummy-key-for-ci \
             -p 8000:8000 papernews:ci
 
           # Wait for the server to come up.

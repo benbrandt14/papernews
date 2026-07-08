@@ -6,7 +6,7 @@ import pytest
 os.environ["PREFECT_API_URL"] = ""
 os.environ["PREFECT_SERVER_ALLOW_EPHEMERAL_MODE"] = "false"
 os.environ["PREFECT_TEST_MODE"] = "true"
-os.environ["GEMINI_API_KEY"] = "fake-key-for-tests"
+os.environ["DEEPSEEK_API_KEY"] = "fake-key-for-tests"
 
 from papernews.config import Preferences
 from papernews.core.router import (
@@ -38,15 +38,20 @@ def llm_enabled(monkeypatch, test_db, mocker):
 
 
 def _mock_gemini(mocker, text: str, prompt_tokens: int, output_tokens: int):
-    """Mock at the Gemini client level so the real GeminiBackend code runs."""
-    mock_response = mocker.MagicMock()
-    mock_response.text = text
-    mock_response.usage_metadata.prompt_token_count = prompt_tokens
-    mock_response.usage_metadata.candidates_token_count = output_tokens
-    client = mocker.MagicMock()
-    client.models.generate_content.return_value = mock_response
-    mocker.patch("papernews.core.backends._gemini_client", return_value=client)
-    return client
+    """Mock the HTTP transport so the real backend + router code runs.
+
+    Named for history; it now stubs the OpenAI-compatible chat endpoint.
+    Returns the patched ``requests.post`` mock.
+    """
+    resp = mocker.MagicMock()
+    resp.json.return_value = {
+        "choices": [{"message": {"content": text}}],
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": output_tokens,
+        },
+    }
+    return mocker.patch("papernews.core.backends.requests.post", return_value=resp)
 
 
 def test_llm_select_article(test_db, llm_enabled, mocker):
@@ -74,13 +79,13 @@ def test_llm_select_article_cache_hit_skips_api(test_db, llm_enabled, mocker):
         title="Python AI",
     )
     test_db.set_cache("select_test_rss", '{"is_selected": false}')
-    client = _mock_gemini(mocker, '{"is_selected": true}', 50, 10)
+    post = _mock_gemini(mocker, '{"is_selected": true}', 50, 10)
 
     selected, telemetry = llm_select_article.fn(doc, Preferences())
 
     assert selected is False  # from cache, not the mock response
     assert telemetry.prompt_tokens == 0  # cache hits cost nothing
-    client.models.generate_content.assert_not_called()
+    post.assert_not_called()
 
 
 def test_llm_summarize_article(test_db, llm_enabled, mocker):
@@ -107,11 +112,11 @@ def test_llm_disabled_short_circuits(monkeypatch, mocker):
     mocker.patch(
         "papernews.core.router.get_run_logger", return_value=mocker.MagicMock()
     )
-    client = _mock_gemini(mocker, '{"is_selected": true}', 1, 1)
+    post = _mock_gemini(mocker, '{"is_selected": true}', 1, 1)
 
     doc = RawDocument(source_id="x", content_type="rss", raw_text="Body", title="Title")
     selected, telemetry = llm_select_article.fn(doc, Preferences())
 
     assert selected is True  # auto-accept
     assert telemetry.prompt_tokens == 0
-    client.models.generate_content.assert_not_called()
+    post.assert_not_called()

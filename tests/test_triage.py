@@ -1,6 +1,6 @@
 import os
 
-os.environ["GEMINI_API_KEY"] = "dummy"
+os.environ["DEEPSEEK_API_KEY"] = "dummy"
 from papernews.config import Preferences
 from papernews.core.main import (
     triage_process_a_filter,

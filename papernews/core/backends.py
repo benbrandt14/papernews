@@ -1,30 +1,48 @@
-"""LLM backends behind one small protocol.
+"""LLM backends: one OpenAI-compatible transport, many providers.
 
-The router only ever sees `LLMBackend`: two methods, both returning
-`(raw_text, Telemetry)`. Caching lives above the backend (in the
-router), so backends stay dumb transport wrappers.
+Every provider papernews talks to speaks the OpenAI ``/chat/completions`` API,
+so there is a single backend. Providers are **presets** — a base URL, the env
+var holding the key, and a default model. Switch with
+``PAPERNEWS_LLM_PROVIDER`` (default ``deepseek``), or point
+``PAPERNEWS_LLM_BASE_URL`` / ``_API_KEY`` / ``_MODEL`` at anything else that
+speaks the same API. No provider SDK is imported — just ``requests``.
 
-Backends:
-  * GeminiBackend — google-genai, structured output via response_schema.
-  * OllamaBackend — local models over the Ollama HTTP API, structured
-    output via its JSON-schema `format` field. Selected with
-    PAPERNEWS_LLM_BACKEND=local; host/model come from OLLAMA_HOST /
-    OLLAMA_MODEL.
+Structured output uses JSON mode (``response_format={"type": "json_object"}``)
+plus the schema injected into the system prompt; the router validates the
+returned JSON against the Pydantic model.
 """
 
 from __future__ import annotations
 
+import json
 import os
-from functools import lru_cache
-from typing import Protocol
+from typing import NamedTuple, Protocol
 
 import requests
-from google import genai
-from google.genai import types
 from pydantic import BaseModel
 
 from papernews.config import Settings
 from papernews.models import Telemetry
+
+
+class Provider(NamedTuple):
+    base_url: str
+    key_env: str | None  # None → no key required (e.g. local Ollama/vLLM)
+    default_model: str
+
+
+# Built-in presets. Any OpenAI-compatible endpoint also works by setting
+# PAPERNEWS_LLM_BASE_URL / _API_KEY / _MODEL directly.
+PROVIDERS: dict[str, Provider] = {
+    "deepseek": Provider(
+        "https://api.deepseek.com/v1", "DEEPSEEK_API_KEY", "deepseek-chat"
+    ),
+    "openrouter": Provider(
+        "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY", "deepseek/deepseek-chat"
+    ),
+    # Ollama and vLLM both expose an OpenAI-compatible server; no key needed.
+    "local": Provider("http://localhost:11434/v1", None, "llama3.1"),
+}
 
 
 class LLMBackend(Protocol):
@@ -35,7 +53,7 @@ class LLMBackend(Protocol):
         temperature: float,
         schema: type[BaseModel],
     ) -> tuple[str | None, Telemetry]:
-        """One model call constrained to `schema`; returns raw JSON text."""
+        """One model call constrained to JSON; returns raw JSON text."""
         ...
 
     def text(
@@ -48,106 +66,60 @@ class LLMBackend(Protocol):
         ...
 
 
-@lru_cache(maxsize=1)
-def _gemini_client() -> genai.Client:
-    """Lazy client — importing this module must not require credentials."""
-    return genai.Client()
+class OpenAICompatBackend:
+    """Talks to any OpenAI-compatible ``/chat/completions`` endpoint."""
 
-
-def _gemini_telemetry(response: types.GenerateContentResponse) -> Telemetry:
-    if response.usage_metadata:
-        return Telemetry(
-            prompt_tokens=response.usage_metadata.prompt_token_count or 0,
-            output_tokens=response.usage_metadata.candidates_token_count or 0,
-        )
-    return Telemetry()
-
-
-class GeminiBackend:
-    def __init__(self, model: str):
-        self.model = model
-
-    def _call(
-        self,
-        contents: str,
-        system_instruction: str,
-        temperature: float,
-        schema: type[BaseModel] | None,
-    ) -> tuple[str | None, Telemetry]:
-        config = types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            temperature=temperature,
-        )
-        if schema is not None:
-            config.response_mime_type = "application/json"
-            config.response_schema = schema
-
-        response = _gemini_client().models.generate_content(
-            model=self.model,
-            contents=contents,
-            config=config,
-        )
-        return response.text or None, _gemini_telemetry(response)
-
-    def structured(
-        self,
-        contents: str,
-        system_instruction: str,
-        temperature: float,
-        schema: type[BaseModel],
-    ) -> tuple[str | None, Telemetry]:
-        return self._call(contents, system_instruction, temperature, schema)
-
-    def text(
-        self,
-        contents: str,
-        system_instruction: str,
-        temperature: float,
-    ) -> tuple[str | None, Telemetry]:
-        return self._call(contents, system_instruction, temperature, None)
-
-
-class OllamaBackend:
     def __init__(
         self,
-        host: str | None = None,
-        model: str | None = None,
-        timeout: float | None = None,
+        base_url: str,
+        api_key: str | None,
+        model: str,
+        timeout: float = 120.0,
     ):
-        self.host = (
-            host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-        ).rstrip("/")
-        self.model = model or os.environ.get("OLLAMA_MODEL", "llama3.1")
-        self.timeout = timeout or float(os.environ.get("OLLAMA_TIMEOUT", "1800"))
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.model = model
+        self.timeout = timeout
 
     def _call(
         self,
         contents: str,
         system_instruction: str,
         temperature: float,
-        schema: type[BaseModel] | None,
+        json_mode: bool,
     ) -> tuple[str | None, Telemetry]:
         payload: dict = {
             "model": self.model,
-            "prompt": contents,
-            "system": system_instruction,
-            "stream": False,
-            "options": {"temperature": temperature},
+            "messages": [
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": contents},
+            ],
+            "temperature": temperature,
         }
-        if schema is not None:
-            payload["format"] = schema.model_json_schema()
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
 
         r = requests.post(
-            f"{self.host}/api/generate", json=payload, timeout=self.timeout
+            f"{self.base_url}/chat/completions",
+            json=payload,
+            headers=headers,
+            timeout=self.timeout,
         )
         r.raise_for_status()
         data = r.json()
 
+        choices = data.get("choices") or []
+        text = choices[0]["message"]["content"] if choices else None
+        usage = data.get("usage") or {}
         telemetry = Telemetry(
-            prompt_tokens=data.get("prompt_eval_count", 0) or 0,
-            output_tokens=data.get("eval_count", 0) or 0,
+            prompt_tokens=usage.get("prompt_tokens", 0) or 0,
+            output_tokens=usage.get("completion_tokens", 0) or 0,
         )
-        return data.get("response") or None, telemetry
+        return (text or None), telemetry
 
     def structured(
         self,
@@ -156,7 +128,15 @@ class OllamaBackend:
         temperature: float,
         schema: type[BaseModel],
     ) -> tuple[str | None, Telemetry]:
-        return self._call(contents, system_instruction, temperature, schema)
+        # JSON mode needs the word "json" in the prompt and benefits from the
+        # target shape; the router validates the result against `schema`.
+        instruction = (
+            f"{system_instruction}\n\n"
+            "Respond with a single JSON object matching this JSON schema:\n"
+            f"{json.dumps(schema.model_json_schema())}\n"
+            "Output only the JSON object, no prose or code fences."
+        )
+        return self._call(contents, instruction, temperature, json_mode=True)
 
     def text(
         self,
@@ -164,10 +144,26 @@ class OllamaBackend:
         system_instruction: str,
         temperature: float,
     ) -> tuple[str | None, Telemetry]:
-        return self._call(contents, system_instruction, temperature, None)
+        return self._call(contents, system_instruction, temperature, json_mode=False)
 
 
 def get_backend(settings: Settings) -> LLMBackend:
-    if settings.llm_backend == "local":
-        return OllamaBackend()
-    return GeminiBackend(settings.llm_model)
+    """Resolve the configured provider preset into a backend.
+
+    Explicit ``PAPERNEWS_LLM_BASE_URL`` / ``_API_KEY`` / ``_MODEL`` settings win
+    over the preset, so any OpenAI-compatible endpoint works without a preset.
+    """
+    preset = PROVIDERS.get(settings.llm_provider)
+    if preset is None and not settings.llm_base_url:
+        raise ValueError(
+            f"Unknown LLM provider {settings.llm_provider!r}. "
+            f"Known: {sorted(PROVIDERS)}, or set PAPERNEWS_LLM_BASE_URL."
+        )
+
+    base_url = settings.llm_base_url or (preset.base_url if preset else "")
+    model = settings.llm_model or (preset.default_model if preset else "")
+    api_key = settings.llm_api_key
+    if api_key is None and preset and preset.key_env:
+        api_key = os.environ.get(preset.key_env)
+
+    return OpenAICompatBackend(base_url=base_url, api_key=api_key, model=model)
