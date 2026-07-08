@@ -19,6 +19,7 @@ def get_plugin_manager() -> pluggy.PluginManager:
 
     from papernews.plugins import (
         curiosity_plugin,
+        entity_plugin,
         hn_plugin,
         rss_plugin,
         salience_plugin,
@@ -30,6 +31,7 @@ def get_plugin_manager() -> pluggy.PluginManager:
     pm.register(wiki_plugin)
     pm.register(curiosity_plugin)
     pm.register(salience_plugin)
+    pm.register(entity_plugin)
 
     pm.check_pending()
     return pm
