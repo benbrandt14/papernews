@@ -189,6 +189,29 @@ def test_healthz_shallow_and_deep(client):
     assert "last_build" in r.json()
 
 
+def test_healthz_llm_probe(client, mocker):
+    backend = mocker.MagicMock()
+    backend.check.return_value = (True, "model @ url replied 'ok'")
+    mocker.patch("papernews.core.backends.get_backend", return_value=backend)
+
+    r = client.get("/healthz", params={"llm": 1})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["llm"]["ok"] is True
+    # A plain liveness check must NOT probe the provider.
+    backend.check.assert_called_once()
+
+
+def test_healthz_llm_probe_reports_misconfig(client, mocker):
+    mocker.patch(
+        "papernews.core.backends.get_backend",
+        side_effect=ValueError("needs an API key"),
+    )
+    r = client.get("/healthz", params={"llm": 1})
+    assert r.status_code == 200
+    assert r.json()["llm"]["ok"] is False
+
+
 def test_digest_pdf_404_when_no_edition(client, tmp_path, monkeypatch):
     monkeypatch.setenv("PAPERNEWS_OUTPUT", str(tmp_path / "empty"))
     r = client.get("/digest.pdf")

@@ -101,6 +101,10 @@ class Settings(BaseSettings):
     llm_model: str = ""
     llm_base_url: str | None = None
     llm_api_key: str | None = None
+    # Transport knobs. max_tokens=0 means "don't send it" (let the provider
+    # decide); some servers require or benefit from a cap.
+    llm_timeout: float = 120.0
+    llm_max_tokens: int = 0
 
 
 def get_settings() -> Settings:
