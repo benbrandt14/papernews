@@ -76,9 +76,16 @@ jobs:
 
       - name: Boot container and probe endpoints
         run: |
+          # Hermetic ingest: the zero-source smoke config plus wiki disabled
+          # means a real run touches no network yet exercises the full
+          # flow → render → persistence path. NO_SCHED keeps the startup
+          # catch-up off so we can assert the pre-ingest 404 first.
           docker run -d --name papernews-ci \
             -e PAPERNEWS_NO_SCHED=1 \
+            -e PAPERNEWS_CONFIG=/app/sources.smoke.toml \
+            -e PAPERNEWS_DISABLE_PLUGINS=wiki_plugin \
             -e DEEPSEEK_API_KEY=dummy-key-for-ci \
+            -v "$PWD/sources.smoke.toml:/app/sources.smoke.toml:ro" \
             -p 8000:8000 papernews:ci
 
           # Wait for the server to come up.
@@ -98,6 +105,26 @@ jobs:
           # GET /ingest returns the friendly 405 hint.
           code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/ingest)
           test "$code" = "405"
+
+      - name: Run a real ingest in the container and verify a PDF persists
+        run: |
+          # Trigger the Prefect pipeline via the same endpoint the NAS uses.
+          curl -fsS -X POST http://localhost:8000/ingest
+
+          # Poll for the persisted edition (Prefect boots a temp server per run).
+          code=000
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /tmp/digest.pdf -w '%{http_code}' http://localhost:8000/digest.pdf)
+            if [ "$code" = "200" ]; then break; fi
+            sleep 2
+          done
+          test "$code" = "200"
+          head -c 4 /tmp/digest.pdf | grep -q '%PDF'
+
+          # The build must have reported success, not a swallowed error.
+          curl -fsS 'http://localhost:8000/healthz?deep=1' > /tmp/deep.json
+          cat /tmp/deep.json
+          grep -q '"status": "error"' /tmp/deep.json && exit 1 || true
 
       - name: Dump container logs on failure
         if: failure()

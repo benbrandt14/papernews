@@ -23,6 +23,16 @@ def test_registry_builds_manager_with_specs_and_builtins():
     } <= names
 
 
+def test_disable_plugins_env_skips_named_plugins(monkeypatch):
+    monkeypatch.setenv("PAPERNEWS_DISABLE_PLUGINS", "wiki_plugin, curiosity_plugin")
+    pm = get_plugin_manager()
+    names = {name for name, _ in pm.list_name_plugin()}
+    assert "papernews.plugins.wiki_plugin" not in names
+    assert "papernews.plugins.curiosity_plugin" not in names
+    # Untouched plugins still register.
+    assert "papernews.plugins.rss_plugin" in names
+
+
 def test_all_hookimpls_match_a_spec():
     """check_pending() raises if any @hookimpl has no matching hookspec —
     the exact failure mode the old spec-less wiring hid until call time."""
