@@ -134,10 +134,22 @@ def create_app() -> FastAPI:
     app = FastAPI(title="papernews", docs_url=None, redoc_url=None)
 
     @app.get("/healthz")
-    def healthz(deep: int = 0) -> JSONResponse:
+    def healthz(deep: int = 0, llm: int = 0) -> JSONResponse:
+        body: dict = {"status": "ok"}
         if deep:
-            return JSONResponse({"status": "ok", "last_build": _last_build})
-        return JSONResponse({"status": "ok"})
+            body["last_build"] = _last_build
+        if llm:
+            # Opt-in: probing makes a real provider call, so it is never part
+            # of a plain liveness check.
+            from papernews.config import get_settings
+            from papernews.core.backends import get_backend
+
+            try:
+                ok, detail = get_backend(get_settings()).check()
+            except ValueError as e:
+                ok, detail = False, str(e)
+            body["llm"] = {"ok": ok, "detail": detail}
+        return JSONResponse(body)
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:

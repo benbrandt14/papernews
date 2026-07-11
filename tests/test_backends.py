@@ -5,7 +5,9 @@ import pytest
 from papernews.config import Settings
 from papernews.core.backends import (
     OpenAICompatBackend,
+    _extract_json,
     get_backend,
+    resolve_provider,
 )
 from papernews.models import LLMArticleSelection
 
@@ -119,3 +121,101 @@ def test_http_error_propagates(mocker):
     backend = OpenAICompatBackend("http://h/v1", "k", "m")
     with pytest.raises(RuntimeError, match="503"):
         backend.text("p", "s", 0.0)
+
+
+# --- Robustness: fail-fast keys, JSON extraction, max_tokens, probe ----------
+
+
+def test_get_backend_missing_key_raises(monkeypatch):
+    monkeypatch.setenv("PAPERNEWS_LLM_PROVIDER", "deepseek")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("PAPERNEWS_LLM_API_KEY", raising=False)
+    monkeypatch.delenv("PAPERNEWS_LLM_BASE_URL", raising=False)
+    with pytest.raises(ValueError, match="needs an API key"):
+        get_backend(Settings())
+
+
+def test_resolve_custom_endpoint_needs_no_preset_key(monkeypatch):
+    # An unknown provider name driven purely by a base_url override → "custom".
+    monkeypatch.setenv("PAPERNEWS_LLM_PROVIDER", "vllm")
+    monkeypatch.setenv("PAPERNEWS_LLM_BASE_URL", "http://vllm.local/v1")
+    monkeypatch.setenv("PAPERNEWS_LLM_MODEL", "my-model")
+    resolved = resolve_provider(Settings())
+    assert resolved.provider == "custom"
+    assert resolved.base_url == "http://vllm.local/v1"
+    assert resolved.api_key is None  # no key needed, and none demanded
+
+
+def test_resolve_base_url_override_suppresses_preset_key(monkeypatch):
+    # Pointing a known preset at a custom base_url means you're supplying your
+    # own endpoint — the preset's key requirement no longer applies.
+    monkeypatch.setenv("PAPERNEWS_LLM_PROVIDER", "deepseek")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("PAPERNEWS_LLM_API_KEY", raising=False)
+    monkeypatch.setenv("PAPERNEWS_LLM_BASE_URL", "http://proxy.local/v1")
+    resolved = resolve_provider(Settings())  # must not raise
+    assert resolved.provider == "deepseek"
+    assert resolved.base_url == "http://proxy.local/v1"
+    assert resolved.api_key is None
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ('{"a": 1}', '{"a": 1}'),
+        ('```json\n{"a": 1}\n```', '{"a": 1}'),
+        ('```\n{"a": 1}\n```', '{"a": 1}'),
+        ('Sure! Here you go: {"a": 1} — hope that helps', '{"a": 1}'),
+        ('{"a": "text with } brace"}', '{"a": "text with } brace"}'),
+        ("no json here", "no json here"),
+    ],
+)
+def test_extract_json(raw, expected):
+    assert _extract_json(raw) == expected
+
+
+def test_structured_extracts_fenced_json(mocker):
+    resp = _chat_response(mocker, '```json\n{"is_selected": true}\n```', 5, 2)
+    mocker.patch("papernews.core.backends.requests.post", return_value=resp)
+    backend = OpenAICompatBackend("http://h/v1", "k", "m")
+    text, _t = backend.structured("p", "s", 0.1, LLMArticleSelection)
+    assert text == '{"is_selected": true}'
+    # And it round-trips through the model the router would validate against.
+    assert LLMArticleSelection.model_validate_json(text).is_selected is True
+
+
+def test_max_tokens_passed_through_when_set(mocker):
+    resp = _chat_response(mocker, "ok", 1, 1)
+    post = mocker.patch("papernews.core.backends.requests.post", return_value=resp)
+    backend = OpenAICompatBackend("http://h/v1", "k", "m", max_tokens=256)
+    backend.text("p", "s", 0.0)
+    assert post.call_args.kwargs["json"]["max_tokens"] == 256
+
+
+def test_check_reports_success(mocker):
+    resp = _chat_response(mocker, "ok", 2, 1)
+    mocker.patch("papernews.core.backends.requests.post", return_value=resp)
+    backend = OpenAICompatBackend("http://h/v1", "k", "deepseek-chat")
+    ok, detail = backend.check()
+    assert ok is True
+    assert "deepseek-chat" in detail
+
+
+def test_check_swallows_errors(mocker):
+    mocker.patch(
+        "papernews.core.backends.requests.post",
+        side_effect=ConnectionError("boom"),
+    )
+    backend = OpenAICompatBackend("http://h/v1", "k", "m")
+    ok, detail = backend.check()
+    assert ok is False
+    assert "boom" in detail
+
+
+def test_get_backend_applies_transport_settings(monkeypatch):
+    monkeypatch.setenv("PAPERNEWS_LLM_PROVIDER", "local")
+    monkeypatch.setenv("PAPERNEWS_LLM_TIMEOUT", "42")
+    monkeypatch.setenv("PAPERNEWS_LLM_MAX_TOKENS", "128")
+    backend = get_backend(Settings())
+    assert backend.timeout == 42.0
+    assert backend.max_tokens == 128
