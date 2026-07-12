@@ -141,7 +141,7 @@ def llm_summarize_article(doc: RawDocument) -> tuple[str, Telemetry]:
         return "Summarization Disabled..", Telemetry()
 
     prompt_text = f"Title: {doc.title}\nSnippet:\n{doc.raw_text[:SUMMARY_INPUT_LENGTH]}"
-    system_instruction = "Write a concise, engaging 1-3 sentence summary of this article snippet. Do not include introductory text."
+    system_instruction = "Write a concise & engaging, while subtly sarcastic or humorous, 1-3 sentence summary of the article and it's broader context."
 
     try:
         text, telemetry, cache_hit = _cached_structured_call(
@@ -160,7 +160,7 @@ def llm_summarize_article(doc: RawDocument) -> tuple[str, Telemetry]:
         if _is_transient(e) and _retries_remaining():
             raise
         logger.error(f"Summarization Error: {e}")
-        return "Summary unavailable.", Telemetry()
+        return "Summary unavailable due to an error.", Telemetry()
 
 
 @task(name="LLM: Strict Markdown Formatter", retries=3, retry_delay_seconds=10)
@@ -176,7 +176,7 @@ def llm_format_body(doc: RawDocument) -> tuple[str, Telemetry]:
         return doc.raw_text, Telemetry()
 
     system_instruction = """
-    You are a strict typography and formatting engine.
+    You are a strict typography and article typsetting engine.
     Your ONLY job is to format the provided text into clean Markdown.
     - Remove unnecessary indentation, web navigation, and spacing.
     - Remove text not associated with the content (comments, external links, "see also")

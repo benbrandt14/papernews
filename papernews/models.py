@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 # Approximate pricing ($ per 1M tokens) for the default provider (DeepSeek
 # deepseek-chat, cache-miss rates). Token counts come from the API and are
 # exact; only this cost estimate is provider-dependent — edit if you switch.
-COST_PER_1M_PROMPT = 0.27
-COST_PER_1M_OUTPUT = 1.10
+COST_PER_1M_PROMPT = 0.14
+COST_PER_1M_OUTPUT = 0.28
 
 
 class Annotation(BaseModel):
@@ -38,7 +38,7 @@ class LLMArticleSelection(BaseModel):
 
 class LLMArticleSummary(BaseModel):
     summary: str = Field(
-        description="A concise, engaging 1-3 sentence summary of the article."
+        description="A concise & engaging, while subtly sarcastic or humorous, 1-3 sentence summary of the article and it's broader context."
     )
 
 
