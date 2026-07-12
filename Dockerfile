@@ -33,6 +33,12 @@ ENV PAPERNEWS_CONFIG=/app/sources.toml
 ENV PAPERNEWS_OUTPUT=/data/output
 ENV PAPERNEWS_STATE=/data/state.db
 
+# Each ingest runs the Prefect flow via a temporary local server. Disable its
+# outbound analytics/telemetry so a single-container deploy makes no
+# unexpected external calls, and keep Prefect's own state on the volume.
+ENV PREFECT_SERVER_ANALYTICS_ENABLED=false
+ENV PREFECT_HOME=/data/.prefect
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=60s --timeout=5s --start-period=15s \

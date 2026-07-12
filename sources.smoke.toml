@@ -1,0 +1,7 @@
+# Zero-source config for the CI docker-smoke ingest. With no sources and the
+# wiki decoration plugin disabled, an ingest touches no network yet still
+# exercises the full flow → render → persistence path, producing an (empty)
+# but valid PDF. Kept deliberately tiny and hermetic.
+
+[preferences]
+default_category_limit = 1

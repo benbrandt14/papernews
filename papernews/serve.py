@@ -221,6 +221,20 @@ def create_app() -> FastAPI:
     return app
 
 
+def start_initial_ingest_if_empty() -> bool:
+    """On boot, build a first edition when none exists yet.
+
+    A fresh deploy would otherwise show /digest.pdf 404 until the first
+    scheduled run (up to INGEST_INTERVAL_SECONDS later). Restarts that already
+    have an edition on the mounted volume skip this. Returns True if an ingest
+    was kicked off.
+    """
+    if _latest_pdf() is not None:
+        return False
+    threading.Thread(target=_do_ingest, daemon=True).start()
+    return True
+
+
 def start_scheduler() -> BackgroundScheduler:
     """Start the background ingest scheduler.
 
@@ -294,4 +308,9 @@ _LANDING_HTML = """<!doctype html>
 
 # ASGI entry point
 app = create_app()
-_scheduler = start_scheduler() if os.environ.get("PAPERNEWS_NO_SCHED") != "1" else None
+_scheduler = None
+if os.environ.get("PAPERNEWS_NO_SCHED") != "1":
+    _scheduler = start_scheduler()
+    # Catch up immediately on a fresh deploy so the first paper isn't an
+    # interval away. Fires in a background thread; the server stays responsive.
+    start_initial_ingest_if_empty()

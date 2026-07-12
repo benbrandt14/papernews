@@ -54,12 +54,29 @@ docker compose up --build -d
 
 ```
 
+On first boot the server builds an initial edition automatically (no need to wait for the schedule), so `http://localhost:8000` shows a paper within a minute or two. `docker compose` reads `.env` if present; without one it runs LLM-off with sensible defaults and still produces a digest.
+
 **API Interaction:**
 The application exposes a web server at `http://localhost:8000`.
 
 * To trigger a new compilation pipeline run, send a request to the `/ingest` endpoint.
 * State (SQLite) and PDF outputs live in `./data/state.db` and `./data/output/` (bind-mounted from the host).
 * **Resetting State:** To perform a hard reset, simply delete `data/state.db` and restart the container. The database schema will automatically rebuild on boot.
+* **Verify the LLM provider:** `docker compose exec papernews papernews check-llm` (and `papernews providers` to list presets).
+
+### Deploy on a Synology NAS
+
+`git clone` (or copy) the repo into a shared folder, then from that folder:
+
+```bash
+docker compose up --build -d      # or use Container Manager → Project, pointed at docker-compose.yml
+```
+
+* `sources.toml` is committed, so the bind mount resolves on a fresh checkout; `./data/` is created on first run and holds `state.db` + the PDFs (owned by root — the container runs as root, which is fine for a bind mount).
+* Everything works without `.env` (LLM off). To enable the LLM, create `.env` from `.env.example` and set a provider key.
+* The container makes no unexpected outbound calls (Prefect telemetry is disabled); only your configured feeds and LLM provider are contacted.
+* Turn features off without editing code via `PAPERNEWS_DISABLE_PLUGINS` (e.g. `wiki_plugin,curiosity_plugin,salience_plugin`).
+* **Note:** if an article contains LaTeX math, Typst fetches the `mitex` package from `packages.typst.org` on first compile — the NAS needs outbound internet for that (cached afterwards).
 
 
 ## Scheduling ingests

@@ -212,6 +212,23 @@ def test_healthz_llm_probe_reports_misconfig(client, mocker):
     assert r.json()["llm"]["ok"] is False
 
 
+def test_initial_ingest_fires_when_no_edition(mocker):
+    mocker.patch("papernews.serve._latest_pdf", return_value=None)
+    thread = mocker.patch("papernews.serve.threading.Thread")
+    assert serve.start_initial_ingest_if_empty() is True
+    thread.assert_called_once()
+    thread.return_value.start.assert_called_once()
+
+
+def test_initial_ingest_skipped_when_edition_exists(mocker, tmp_path):
+    existing = tmp_path / "2026-01-01.pdf"
+    existing.write_bytes(b"%PDF-1.7")
+    mocker.patch("papernews.serve._latest_pdf", return_value=existing)
+    thread = mocker.patch("papernews.serve.threading.Thread")
+    assert serve.start_initial_ingest_if_empty() is False
+    thread.assert_not_called()
+
+
 def test_digest_pdf_404_when_no_edition(client, tmp_path, monkeypatch):
     monkeypatch.setenv("PAPERNEWS_OUTPUT", str(tmp_path / "empty"))
     r = client.get("/digest.pdf")
