@@ -248,8 +248,11 @@
   #v(0.4 * u)
   #text(font: sans, size: 7pt, fill: luma(45%))[
     ((( stats.ingested - stats.after_filter ))) dropped by deterministic filters
-    #sym.dot.c ((( stats.after_filter - stats.after_budget ))) over category budgets
+    #sym.dot.c ((( stats.after_filter - stats.after_budget - stats.ai_dropped ))) over category budgets
     #sym.dot.c ((( stats.after_budget - stats.selected ))) declined by the gatekeeper
+    ((* if stats.ai_deranked or stats.ai_dropped *))
+    #sym.dot.c ((( stats.ai_deranked ))) deranked, ((( stats.ai_dropped ))) dropped by the AI-likeness screen
+    ((* endif *))
   ]
 ]
 #v(1.2 * u)
@@ -339,6 +342,23 @@
     ]
   ((* else *))
     ((( art.body_typst )))
+  ((* endif *))
+
+  // Stylometrics footer: the AI-likeness screen's read on the *source* text
+  // (pre-LLM), so the finished paper discloses what the funnel measured.
+  ((* if art.ai_metrics *))
+  #v(0.8 * u)
+  #block(breakable: false)[
+    #line(length: 18%, stroke: 0.4pt + luma(55%))
+    #v(0.35 * u)
+    #text(font: sans, size: 7pt, tracking: 0.05em, fill: luma(45%))[
+      ((* if art.ai_metrics.reliable *))
+      #upper[Stylometrics] #sym.dot.c AI-likeness ((( art.ai_metrics.formatted_likelihood ))) #sym.dot.c burstiness ((( art.ai_metrics.formatted_burstiness ))) #sym.dot.c lexical diversity ((( art.ai_metrics.formatted_diversity ))) #sym.dot.c stock phrases ((( art.ai_metrics.formatted_phrase_rate ))) per 1k words
+      ((* else *))
+      #upper[Stylometrics] #sym.dot.c source too short to profile #sym.dot.c ((( art.ai_metrics.word_count ))) words
+      ((* endif *))
+    ]
+  ]
   ((* endif *))
 
   // Force long articles to break to a new page so the next article starts fresh

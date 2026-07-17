@@ -81,6 +81,51 @@ def test_article_to_dict_cost_formatting():
     assert data["telemetry"]["formatted_cost"] == f"{cents:.3f}"
 
 
+def test_article_to_dict_ai_metrics():
+    """The stylometrics footer reads pre-formatted strings; the adapter must
+    inject the @property values exactly like it does for Telemetry."""
+    from papernews.models import AITextMetrics
+
+    chunk = ArticleChunk(
+        category="Tech",
+        source="Source",
+        title="Title",
+        summary="Sum",
+        body_markdown="Body",
+        url="URL",
+        ai_metrics=AITextMetrics(
+            ai_likelihood=0.72,
+            burstiness=0.31,
+            lexical_diversity=0.66,
+            stock_phrases_per_1k=4.2,
+            word_count=850,
+            reliable=True,
+        ),
+    )
+    data = article_to_dict(chunk)
+    m = data["ai_metrics"]
+    assert m["reliable"] is True
+    assert m["word_count"] == 850
+    assert m["formatted_likelihood"] == "72%"
+    assert m["formatted_burstiness"] == "0.31"
+    assert m["formatted_diversity"] == "0.66"
+    assert m["formatted_phrase_rate"] == "4.2"
+
+
+def test_article_to_dict_without_ai_metrics():
+    """No screen ran (feature off / hand-built chunk): the key stays None so
+    the template's `if art.ai_metrics` guard skips the footer."""
+    chunk = ArticleChunk(
+        category="Tech",
+        source="Source",
+        title="Title",
+        summary="Sum",
+        body_markdown="Body",
+        url="URL",
+    )
+    assert article_to_dict(chunk)["ai_metrics"] is None
+
+
 def test_render_context_to_template_vars():
     """The adapter must assemble the exact `decorations` shape the template
     reads: front-page decorations merged with run metadata."""
@@ -118,6 +163,8 @@ def test_render_context_to_template_vars():
         "after_filter": 38,
         "after_budget": 14,
         "selected": 9,
+        "ai_deranked": 0,
+        "ai_dropped": 0,
     }
     deco = variables["decorations"]
     assert deco["generation_time"] == "Jul 05, 2026 at 07:00 AM"

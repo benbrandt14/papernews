@@ -4,6 +4,7 @@ os.environ["DEEPSEEK_API_KEY"] = "dummy"
 from papernews.config import Preferences
 from papernews.core.main import (
     triage_process_a_filter,
+    triage_process_b5_ai_derank,
     triage_process_b_rank,
     triage_process_c_budget,
 )
@@ -158,6 +159,126 @@ def test_rank_does_not_mutate_inputs():
     result = func([doc], Preferences(interest=["AI"]))
     assert result[0].heuristic_score == 1
     assert doc.heuristic_score == 3  # original untouched
+
+
+# Realistic-shape bodies for the AI-likeness screen: both long enough to be
+# reliable; one varied and clean, one uniform and saturated with LLM filler.
+_HUMAN_BODY = (
+    "The launch slipped again. Nobody at the pad seemed surprised. "
+    "Engineers flagged a helium leak on Tuesday, and by Thursday the fix was "
+    "still being argued over in a windowless conference room. "
+    '"We fly when it\'s ready," the program manager said. Short. Flat. Final. '
+    "The customer, a small startup out of Helsinki, took the delay in stride; "
+    "their last ride waited five months. What worries the range office is the "
+    "weather, since a front is stalling over the Gulf and the recovery ship "
+    "cannot hold station in nine-foot swells. If Saturday scrubs, the next "
+    "window opens on the 14th. Meanwhile the booster sat in the hangar with "
+    "its grid fins folded like a sleeping bird. Turnaround used to take "
+    "months. Now the bottleneck is paperwork, one official joked, not "
+    "hardware. Nobody laughed harder than the schedulers."
+)
+_SLOP_BODY = (
+    "In today's fast-paced world, this launch is a testament to human "
+    "ingenuity. The mission plays a crucial role in the ever-evolving "
+    "landscape of spaceflight. Moreover, the rocket seamlessly integrates "
+    "cutting-edge technology with proven practices. It's important to note "
+    "that the provider has embarked on a journey to revolutionize access to "
+    "orbit. Furthermore, the booster underscores the importance of "
+    "sustainable solutions. The company continues to delve into new methods "
+    "for unlocking the potential of reusability. Additionally, the mission "
+    "provides valuable insights into the future of the industry. In "
+    "conclusion, this launch is a game-changer that will elevate your "
+    "understanding of rocketry. Whether you're a casual observer or a "
+    "seasoned expert, the ever-changing landscape offers a rich tapestry of "
+    "innovation. Moreover, the team leverages the power of iterative design "
+    "to navigate the complexities of orbital mechanics."
+)
+
+
+def _doc(source_id: str, body: str, category: str = "Sci") -> RawDocument:
+    return RawDocument(
+        source_id=source_id,
+        content_type="rss",
+        raw_text=body,
+        title=f"Doc {source_id}",
+        category=category,
+    )
+
+
+def test_ai_derank_sinks_flagged_docs():
+    """A stock-phrase-laden doc gets the penalty and sorts below clean docs,
+    so the category budget cuts it first."""
+    func = getattr(triage_process_b5_ai_derank, "fn", triage_process_b5_ai_derank)
+    docs = [_doc("slop", _SLOP_BODY), _doc("h1", _HUMAN_BODY), _doc("h2", _HUMAN_BODY)]
+
+    result, deranked, dropped = func(docs, Preferences())
+
+    assert deranked == 1
+    assert dropped == 0
+    assert [d.source_id for d in result] == ["h1", "h2", "slop"]
+    assert result[-1].heuristic_score == 3 + 2  # default penalty applied
+    # Metrics attach to every surviving doc for the article footer.
+    assert all(d.ai_metrics is not None for d in result)
+
+    # Downstream: a budget of 2 now cuts the flagged doc, not a clean one.
+    budget = getattr(triage_process_c_budget, "fn", triage_process_c_budget)
+    surviving = budget(result, {"Sci": 2}, Preferences())
+    assert [d.source_id for d in surviving] == ["h1", "h2"]
+
+
+def test_ai_derank_disabled_is_a_noop():
+    func = getattr(triage_process_b5_ai_derank, "fn", triage_process_b5_ai_derank)
+    docs = [_doc("slop", _SLOP_BODY)]
+    result, deranked, dropped = func(docs, Preferences(ai_detection_enabled=False))
+    assert (deranked, dropped) == (0, 0)
+    assert result[0] is docs[0]
+    assert result[0].ai_metrics is None
+
+
+def test_ai_derank_hard_drop_threshold():
+    func = getattr(triage_process_b5_ai_derank, "fn", triage_process_b5_ai_derank)
+    docs = [_doc("slop", _SLOP_BODY), _doc("h1", _HUMAN_BODY)]
+    result, deranked, dropped = func(docs, Preferences(ai_drop_threshold=0.6))
+    assert dropped == 1
+    assert deranked == 0
+    assert [d.source_id for d in result] == ["h1"]
+
+
+def test_ai_derank_never_penalizes_short_docs():
+    """Unreliable (short) samples keep their rank — metrics attach, no verdict."""
+    func = getattr(triage_process_b5_ai_derank, "fn", triage_process_b5_ai_derank)
+    doc = _doc("tiny", "A tapestry of game-changers. Delve in.")
+    result, deranked, dropped = func([doc], Preferences(ai_drop_threshold=0.1))
+    assert (deranked, dropped) == (0, 0)
+    assert result[0].heuristic_score == 3
+    assert result[0].ai_metrics is not None
+    assert result[0].ai_metrics.reliable is False
+
+
+def test_ai_derank_does_not_mutate_inputs():
+    func = getattr(triage_process_b5_ai_derank, "fn", triage_process_b5_ai_derank)
+    doc = _doc("slop", _SLOP_BODY)
+    result, _, _ = func([doc], Preferences())
+    assert result[0].heuristic_score == 5
+    assert doc.heuristic_score == 3  # original untouched
+    assert doc.ai_metrics is None
+
+
+def test_ai_derank_configurable_threshold_and_penalty():
+    func = getattr(triage_process_b5_ai_derank, "fn", triage_process_b5_ai_derank)
+    docs = [_doc("h1", _HUMAN_BODY)]
+    # A hair-trigger threshold flags even clean human prose…
+    result, deranked, _ = func(
+        docs, Preferences(ai_derank_threshold=0.0, ai_derank_penalty=7)
+    )
+    assert deranked == 1
+    assert result[0].heuristic_score == 10
+    # …while penalty 0 makes the screen observe-only.
+    result, deranked, _ = func(
+        docs, Preferences(ai_derank_threshold=0.0, ai_derank_penalty=0)
+    )
+    assert deranked == 1
+    assert result[0].heuristic_score == 3
 
 
 def test_budget_enforces_category_limits():

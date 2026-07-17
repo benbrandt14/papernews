@@ -24,6 +24,14 @@ def article_to_dict(chunk: ArticleChunk) -> dict:
         data["telemetry"]["formatted_tokens"] = chunk.telemetry.formatted_tokens
         data["telemetry"]["formatted_cost"] = chunk.telemetry.formatted_cost
 
+    # Same story for the AI-likeness stylometrics footer.
+    if chunk.ai_metrics is not None:
+        m = chunk.ai_metrics
+        data["ai_metrics"]["formatted_likelihood"] = m.formatted_likelihood
+        data["ai_metrics"]["formatted_burstiness"] = m.formatted_burstiness
+        data["ai_metrics"]["formatted_diversity"] = m.formatted_diversity
+        data["ai_metrics"]["formatted_phrase_rate"] = m.formatted_phrase_rate
+
     # Filled in by build_pdf — emission needs the workdir for image fetching.
     data["body_typst"] = ""
 

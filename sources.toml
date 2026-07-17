@@ -150,6 +150,14 @@ blacklist_words = ["Anthropic", "OpenAI", "Claude", "ChatGPT", "agentic"]
 interest = ["Articles with technical depth and novelty", "Articles with a unique, earned perspective", "Only include high-value product reviews or comparisons, no ad articles or bloatware", "Realistic and accurate AI news without hype","Updates to tools I use (Matlab/Simulink, Julia, Wolfram Alpha)", "New tools, languages, techniques, and frameworks."]
 disinterest = ["sensationalism and repetitive verbosity","local announcements or updates not directed to a general audience"]
 
+# --- AI-likeness screen (triage Stage 2B.5) — deterministic, zero API cost.
+# Deranks statistically AI-flavored articles below the category-budget cut.
+# These are the defaults; uncomment to tune.
+# ai_detection_enabled = true
+# ai_derank_threshold = 0.6   # ai_likelihood >= this adds the penalty below
+# ai_derank_penalty = 2       # added to the local rank (lower rank = better)
+# ai_drop_threshold = 0.9     # optional hard drop; omit to never drop
+
 [category_limits]
 "Science" = 3
 "Math" = 2

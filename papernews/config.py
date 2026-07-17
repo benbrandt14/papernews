@@ -48,6 +48,17 @@ class Preferences(BaseModel):
     disinterest: list[str] = Field(default_factory=list)
     max_char_length: int = 20000
 
+    # --- AI-likeness screen (triage Stage 2B.5, papernews.ai_detect) ------
+    # Deterministic stylometrics derank formulaic articles below the
+    # category-budget cut line before any LLM cost is spent. A noise dial,
+    # not a detector: unreliable (short) samples are never penalized.
+    ai_detection_enabled: bool = True
+    # Scores at or above this add ai_derank_penalty to the local rank.
+    ai_derank_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
+    ai_derank_penalty: int = Field(default=2, ge=0)
+    # Optional hard drop for extreme scores; unset means "never drop".
+    ai_drop_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+
 
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")

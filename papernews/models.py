@@ -17,6 +17,39 @@ class Annotation(BaseModel):
     style: Literal["standard", "snark"] = "standard"
 
 
+class AITextMetrics(BaseModel):
+    """Article-level stylometrics from the AI-likeness screen (ai_detect.py).
+
+    Computed on the ingested source text, before the LLM rewrites anything.
+    `ai_likelihood` is a noise dial (0 = human-flavored, 1 = formulaic LLM
+    filler), not a forensic verdict; when `reliable` is False the sample was
+    too small and the pipeline must not act on the score.
+    """
+
+    ai_likelihood: float = 0.0
+    burstiness: float = 0.0  # sentence-length coefficient of variation
+    lexical_diversity: float = 0.0  # moving-window type/token ratio
+    stock_phrases_per_1k: float = 0.0  # LLM-tell phrase hits per 1000 words
+    word_count: int = 0
+    reliable: bool = False
+
+    @property
+    def formatted_likelihood(self) -> str:
+        return f"{self.ai_likelihood:.0%}"
+
+    @property
+    def formatted_burstiness(self) -> str:
+        return f"{self.burstiness:.2f}"
+
+    @property
+    def formatted_diversity(self) -> str:
+        return f"{self.lexical_diversity:.2f}"
+
+    @property
+    def formatted_phrase_rate(self) -> str:
+        return f"{self.stock_phrases_per_1k:.1f}"
+
+
 class RawDocument(BaseModel):
     source_id: str
     content_type: Literal["rss", "academic_pdf", "wiki_event", "wiki_quote"]
@@ -26,6 +59,8 @@ class RawDocument(BaseModel):
     published: str = ""
     # Local-ranking score attached by triage Stage 2B (lower = better).
     heuristic_score: int = 3
+    # Stylometrics attached by triage Stage 2B.5 (the AI-likeness screen).
+    ai_metrics: AITextMetrics | None = None
     # Free-form plugin extras (e.g. feed_url); typed data belongs in fields.
     metadata: dict = Field(default_factory=dict)
 
@@ -182,6 +217,8 @@ class ArticleChunk(BaseModel):
     # Structured body (markdown IR); the typed emitter renders it.
     blocks: list[Block] = Field(default_factory=list)
     enrichment: Enrichment = Field(default_factory=Enrichment)
+    # Stylometrics of the *source* text (pre-LLM), for the article footer.
+    ai_metrics: AITextMetrics | None = None
 
 
 class FunnelStats(BaseModel):
@@ -195,6 +232,10 @@ class FunnelStats(BaseModel):
     after_filter: int = 0
     after_budget: int = 0
     selected: int = 0
+    # AI-likeness screen (Stage 2B.5): deranked survive with a rank penalty,
+    # dropped never reach the category budget.
+    ai_deranked: int = 0
+    ai_dropped: int = 0
 
 
 class RenderContext(BaseModel):

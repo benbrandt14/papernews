@@ -149,6 +149,72 @@ def test_build_pdf_renders_frontmatter_index_with_funnel(tmp_path):
     assert "Discovery Number 1" in typ
 
 
+def test_build_pdf_renders_stylometrics_footer(tmp_path):
+    """Each article discloses the AI-likeness screen's metrics in a footer;
+    unreliable (too-short) samples say so instead of printing numbers."""
+    from papernews.models import AITextMetrics, ArticleChunk, FunnelStats
+
+    scored = ArticleChunk(
+        category="Science",
+        source="example.com",
+        title="A Scored Story",
+        summary="Summary.",
+        body_markdown="Body paragraph with detail.",
+        url="https://example.com/scored",
+        ai_metrics=AITextMetrics(
+            ai_likelihood=0.72,
+            burstiness=0.31,
+            lexical_diversity=0.66,
+            stock_phrases_per_1k=4.2,
+            word_count=850,
+            reliable=True,
+        ),
+    )
+    tiny = ArticleChunk(
+        category="Science",
+        source="example.com",
+        title="A Tiny Story",
+        summary="Summary.",
+        body_markdown="Short.",
+        url="https://example.com/tiny",
+        ai_metrics=AITextMetrics(word_count=12, reliable=False),
+    )
+    unscored = ArticleChunk(
+        category="Science",
+        source="example.com",
+        title="An Unscored Story",
+        summary="Summary.",
+        body_markdown="Body.",
+        url="https://example.com/unscored",
+    )
+    ctx = _ctx(
+        articles=[scored, tiny, unscored],
+        stats=FunnelStats(
+            ingested=10,
+            after_filter=8,
+            after_budget=4,
+            selected=3,
+            ai_deranked=2,
+            ai_dropped=1,
+        ),
+    )
+    pdf = build_pdf(ctx, tmp_path)
+    assert pdf.exists()
+    typ = (tmp_path / ".build" / "2026-01-01.typ").read_text()
+
+    # Scored article: the full metric line.
+    assert "AI-likeness 72%" in typ
+    assert "burstiness 0.31" in typ
+    assert "lexical diversity 0.66" in typ
+    assert "stock phrases 4.2" in typ
+    # Unreliable article: honesty over fake precision.
+    assert "too short to profile" in typ
+    # Exactly two footers: the unscored article renders none.
+    assert typ.count("#upper[Stylometrics]") == 2
+    # The funnel fine print carries the screen's counts.
+    assert "2 deranked, 1 dropped by the AI-likeness screen" in typ
+
+
 def test_build_pdf_renders_curiosity_box(tmp_path):
     """Answered questions from the curiosity queue render as a front-matter box."""
     from papernews.models import Curiosity, FrontpageDecorations

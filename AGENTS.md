@@ -33,7 +33,8 @@ Papernews enforces a strict boundary between data processing and presentation.
 * New data sources are `fetch_sources` plugins yielding `RawDocument`s (typed fields `title`/`category`/`published` populated; `metadata` only for genuine extras).
 * Cross-article features (salience, entities, marginalia, curiosity queue) are `enrich_articles` plugins: they see the whole day's `ArticleChunk`s at Stage 3.5 and attach sidecar data in place (`blocks` spans, `enrichment`, `annotations`).
 * When scraping HTML, use `trafilatura` with `include_images=True` and `include_links=True` strictly maintained.
-* **Cost Control (The Triage Funnel):** Never bypass Stage 2. All documents pass deterministic local filters (noise regexes, blacklists, ranking, category limits) before the LLM.
+* **Cost Control (The Triage Funnel):** Never bypass Stage 2. All documents pass deterministic local filters (noise regexes, blacklists, ranking, the AI-likeness screen, category limits) before the LLM.
+* **AI-Likeness Screen (Stage 2B.5):** `papernews/ai_detect.py` (adapted from lyc8503/AITextDetector) scores each document's source text with pure-Python stylometrics and deranks formulaic articles below the category-budget cut; optional hard drop via `ai_drop_threshold`. It is a configurable noise dial, not a detector — unreliable (short) samples are never penalized, and the scorer must stay deterministic with zero dependencies. Metrics ride `RawDocument.ai_metrics` → `ArticleChunk.ai_metrics` and surface as a per-article stylometrics footer plus funnel counts in the finished paper.
 
 ### Rendering (IR + Typst)
 * Article bodies flow through the markdown IR: `markdown_ir.parse_markdown` (pure; plain text + char-offset `Span`s) → enrichers → `typst_emit.emit_blocks` (escapes exactly once, no sentinel tokens). Enrichers operate on `Block.text` offsets and must never see markdown or Typst.

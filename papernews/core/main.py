@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 from prefect import flow, task
 
+from papernews.ai_detect import score_text
 from papernews.config import AppConfig, Preferences, get_settings, load_config
 from papernews.core.router import (
     llm_format_body,
@@ -129,6 +130,48 @@ def triage_process_b_rank(
     return sorted(scored, key=lambda d: d.heuristic_score)
 
 
+@task(name="Stage 2B.5: AI-Likeness Derank")
+def triage_process_b5_ai_derank(
+    documents: list[RawDocument], prefs: Preferences
+) -> tuple[list[RawDocument], int, int]:
+    """Derank (and optionally drop) statistically AI-flavored documents.
+
+    Runs between local ranking (2B) and the category budget (2C) so that
+    flagged documents fall below the budget cut line instead of costing
+    LLM tokens. Scoring (papernews.ai_detect, adapted from
+    lyc8503/AITextDetector) is deterministic and local; metrics attach to
+    every surviving document so the renderer can print them per article.
+
+    Returns (documents, deranked_count, dropped_count).
+    """
+    if not prefs.ai_detection_enabled:
+        return documents, 0, 0
+
+    deranked = 0
+    dropped = 0
+    scored_docs: list[RawDocument] = []
+    for doc in documents:
+        metrics = score_text(doc.raw_text)
+        update: dict = {"ai_metrics": metrics}
+        if metrics.reliable:
+            if (
+                prefs.ai_drop_threshold is not None
+                and metrics.ai_likelihood >= prefs.ai_drop_threshold
+            ):
+                dropped += 1
+                continue
+            if metrics.ai_likelihood >= prefs.ai_derank_threshold:
+                update["heuristic_score"] = (
+                    doc.heuristic_score + prefs.ai_derank_penalty
+                )
+                deranked += 1
+        # Return updated copies — tasks must not mutate their inputs.
+        scored_docs.append(doc.model_copy(update=update))
+
+    # Stable sort: deranked docs sink, everything else keeps 2B's order.
+    return sorted(scored_docs, key=lambda d: d.heuristic_score), deranked, dropped
+
+
 @task(name="Stage 2C: Category Limit Enforcer")
 def triage_process_c_budget(
     documents: list[RawDocument], limits: dict[str, int], prefs: Preferences
@@ -208,6 +251,7 @@ def stage3_hybrid_construction(
             relative_time=rel_time,
             telemetry=article_telemetry,
             annotations=[],
+            ai_metrics=doc.ai_metrics,
         )
         chunk.blocks = parse_markdown(formatted_markdown)
         processed_chunks.append(chunk)
@@ -279,8 +323,11 @@ def run_papernews(config: AppConfig) -> Path:
 
     filtered = triage_process_a_filter(raw_docs, config.preferences)
     ranked = triage_process_b_rank(filtered, config.preferences)
+    screened, ai_deranked, ai_dropped = triage_process_b5_ai_derank(
+        ranked, config.preferences
+    )
     budgeted = triage_process_c_budget(
-        ranked, config.category_limits, config.preferences
+        screened, config.category_limits, config.preferences
     )
 
     article_chunks, total_telemetry = stage3_hybrid_construction(
@@ -296,6 +343,8 @@ def run_papernews(config: AppConfig) -> Path:
         after_filter=len(filtered),
         after_budget=len(budgeted),
         selected=len(enriched),
+        ai_deranked=ai_deranked,
+        ai_dropped=ai_dropped,
     )
 
     pdf_path = stage5_bespoke_render(enriched, total_telemetry, decorations, stats)
