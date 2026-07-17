@@ -8,7 +8,10 @@ services:
       - .env
     volumes:
       - ./data:/data
-      - ./sources.toml:/app/sources.toml:ro
+      # Writable so the /edit web editor can save changes back to the host
+      # file. The app writes in place (never replace-by-rename) because a
+      # single-file bind mount is pinned to this inode.
+      - ./sources.toml:/app/sources.toml
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

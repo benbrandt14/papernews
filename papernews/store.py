@@ -33,6 +33,28 @@ MIGRATIONS: list[str] = [
         status TEXT NOT NULL DEFAULT 'open'
     );
     """,
+    # 3: article registry — one row per article URL the triage pipeline has
+    # ever processed. Separates "first seen/processed" (first_seen_at, set the
+    # first time triage scores the article) from "actually typeset into an
+    # edition" (typeset_at, set only after a PDF render succeeds). The
+    # pipeline skips any URL with a non-NULL typeset_at, so an article can
+    # appear in at most one edition. Computed attributes (heuristic_score)
+    # are stored alongside so runs are auditable after the fact.
+    """
+    CREATE TABLE IF NOT EXISTS articles (
+        url TEXT PRIMARY KEY,
+        title TEXT NOT NULL DEFAULT '',
+        category TEXT NOT NULL DEFAULT '',
+        heuristic_score INTEGER,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        seen_count INTEGER NOT NULL DEFAULT 1,
+        typeset_at TEXT,
+        typeset_edition TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_articles_typeset
+        ON articles (typeset_at) WHERE typeset_at IS NOT NULL;
+    """,
 ]
 
 
@@ -77,6 +99,70 @@ class SimpleStore:
             conn.execute(
                 "INSERT OR REPLACE INTO llm_cache (id, response) VALUES (?, ?)",
                 (cache_key, response),
+            )
+
+    # --- Article registry -----------------------------------------------------
+
+    def record_processed(
+        self,
+        url: str,
+        title: str,
+        category: str,
+        heuristic_score: int,
+        seen_at: str,
+    ) -> None:
+        """Record that triage processed an article on this run.
+
+        First sighting sets first_seen_at; later sightings only bump
+        last_seen_at/seen_count and refresh the computed attributes
+        (title and heuristic score can legitimately change between runs).
+        """
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO articles "
+                "(url, title, category, heuristic_score, first_seen_at, "
+                " last_seen_at, seen_count) "
+                "VALUES (?, ?, ?, ?, ?, ?, 1) "
+                "ON CONFLICT(url) DO UPDATE SET "
+                "  title = excluded.title, "
+                "  category = excluded.category, "
+                "  heuristic_score = excluded.heuristic_score, "
+                "  last_seen_at = excluded.last_seen_at, "
+                "  seen_count = seen_count + 1",
+                (url, title, category, heuristic_score, seen_at, seen_at),
+            )
+
+    def typeset_urls(self, urls: list[str]) -> set[str]:
+        """The subset of `urls` already typeset into a previous edition."""
+        if not urls:
+            return set()
+        placeholders = ",".join("?" * len(urls))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT url FROM articles "
+                f"WHERE typeset_at IS NOT NULL AND url IN ({placeholders})",
+                urls,
+            ).fetchall()
+            return {str(r[0]) for r in rows}
+
+    def mark_typeset(self, urls: list[str], typeset_at: str, edition: str) -> None:
+        """Stamp articles as published in an edition. Called only after the
+        PDF render succeeded — a failed run must leave articles eligible for
+        the next edition. Already-typeset rows keep their original stamp."""
+        if not urls:
+            return
+        with self._connect() as conn:
+            # Upsert: an article that reached the renderer without passing
+            # through triage (e.g. injected by a plugin) still gets stamped.
+            conn.executemany(
+                "INSERT INTO articles "
+                "(url, first_seen_at, last_seen_at, typeset_at, typeset_edition) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(url) DO UPDATE SET "
+                "  typeset_at = excluded.typeset_at, "
+                "  typeset_edition = excluded.typeset_edition "
+                "WHERE typeset_at IS NULL",
+                [(url, typeset_at, typeset_at, typeset_at, edition) for url in urls],
             )
 
     # --- Curiosity queue ------------------------------------------------------

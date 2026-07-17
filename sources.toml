@@ -1,4 +1,4 @@
-# Add, remove, or reorder sources here.
+# Add, remove, or reorder sources here (or via the web editor at /edit).
 # kind = "hn"  -> Hacker News via Algolia search (top by points in a window)
 # kind = "rss" -> RSS/Atom feed via feedparser
 #
@@ -16,7 +16,19 @@ category = "Math"
 kind = "rss"
 url = "https://terrytao.wordpress.com/feed/"
 
-# --- Space -----------------------------------------------------
+[[source]]
+name = "Quanta Magazine"
+category = "Science"
+kind = "rss"
+url = "https://www.quantamagazine.org/feed/"
+
+[[source]]
+name = "Nautilus"
+category = "Science"
+kind = "rss"
+url = "https://nautil.us/feed/"
+
+# --- Space ---------------------------------------------------------------
 
 [[source]]
 name  = "SpaceNews"
@@ -30,32 +42,33 @@ category = "Space"
 kind  = "rss"
 url   = "https://aviationweek.com/rss/space"
 
-# --- Academic  -----------------------------------------------------------
+[[source]]
+name  = "NASASpaceflight"
+category = "Space"
+kind  = "rss"
+url   = "https://www.nasaspaceflight.com/feed/"
+
+# --- Ocean / Diving ------------------------------------------------------
+
+[[source]]
+name  = "MBARI"
+category = "Ocean"
+kind  = "rss"
+url   = "https://www.mbari.org/feed/"
+
+[[source]]
+name  = "DeeperBlue"
+category = "Ocean"
+kind  = "rss"
+url   = "https://www.deeperblue.com/feed/"
+
+# --- Academic / Robotics / Control ---------------------------------------
 
 # [[source]]
 # name  = "Nature"
 # category = "Science"
 # kind  = "rss"
 # url   = "https://www.nature.com/nature.rss"
-
-[[source]]
-name = "Quanta Magazine"
-category = "Science"
-kind = "rss"
-url = "https://www.quantamagazine.org/feed/"
-
-
-# [[source]]
-# name  = "Nature Machine Intelligence"
-# category = "Academic"
-# kind  = "rss"
-# url   = "https://www.nature.com/natmachintell.rss"
-
-# [[source]]
-# name  = "arXiv: Optimization & Control"
-# category = "Academic"
-# kind  = "rss"
-# url   = "https://export.arxiv.org/rss/math.OC"
 
 [[source]]
 name  = "IEEE Spectrum Robotics"
@@ -68,6 +81,38 @@ name  = "arXiv: Robotics"
 category = "Academic"
 kind  = "rss"
 url   = "https://export.arxiv.org/rss/cs.RO"
+
+[[source]]
+name  = "arXiv: Optimization & Control"
+category = "Academic"
+kind  = "rss"
+url   = "https://export.arxiv.org/rss/math.OC"
+
+[[source]]
+name  = "arXiv: Systems & Control"
+category = "Academic"
+kind  = "rss"
+url   = "https://export.arxiv.org/rss/eess.SY"
+
+# --- Scientific Computing ------------------------------------------------
+
+[[source]]
+name  = "Julia Language Blog"
+category = "Scientific Computing"
+kind  = "rss"
+url   = "https://julialang.org/feed.xml"
+
+[[source]]
+name  = "Wolfram Blog"
+category = "Scientific Computing"
+kind  = "rss"
+url   = "https://blog.wolfram.com/feed/"
+
+[[source]]
+name  = "HPCwire"
+category = "Scientific Computing"
+kind  = "rss"
+url   = "https://www.hpcwire.com/feed/"
 
 # --- ML / AI -------------------------------------------------------------
 
@@ -82,6 +127,12 @@ name = "Lil'Log"
 category = "Artificial Intelligence"
 kind = "rss"
 url = "https://lilianweng.github.io/index.xml"
+
+[[source]]
+name  = "The Gradient"
+category = "Artificial Intelligence"
+kind  = "rss"
+url   = "https://thegradient.pub/rss/"
 
 # --- Programming -------------------------------------------------
 
@@ -110,6 +161,12 @@ name  = "Synthtopia"
 category = "Music"
 kind  = "rss"
 url   = "https://www.synthtopia.com/feed/"
+
+[[source]]
+name  = "CDM (Create Digital Music)"
+category = "Music"
+kind  = "rss"
+url   = "https://cdm.link/feed/"
 
 # --- Photography ---------------------------------------------------
 
@@ -144,17 +201,19 @@ since_hours = 48
 
 [preferences]
 default_category_limit = 1
-prefer_category = ["space", "simulation", "high performance computing", "photography", "3d scanning", "lidar", "signal processing", "reinforcement learning", "cognitive science", "neuroscience", "science", "geometry", "knowledge representation", "mechanism", "machine tools", "scientific computing", "applied mathematics", "mechanical", "engineering", "robotics", "modular synthesis", "marine biology","ecology", "scuba diving", "underwater habitation", "architecture", "systems", "control", "dynamics", "state estimation"]
+prefer_category = ["space", "simulation", "high performance computing", "photography", "3d scanning", "lidar", "signal processing", "reinforcement learning", "cognitive science", "neuroscience", "science", "geometry", "knowledge representation", "mechanism", "machine tools", "scientific computing", "applied mathematics", "mechanical", "engineering", "robotics", "modular synthesis", "marine biology", "ecology", "scuba diving", "underwater habitation", "architecture", "systems", "control", "dynamics", "state estimation"]
 less_prefer_category = ["sports", "raspberry pi", "security", "genetics", "politics", "economics", "automotive", "cars", "recycling", "CSS", "UI/UX"]
 blacklist_words = ["Anthropic", "OpenAI", "Claude", "ChatGPT", "agentic"]
-interest = ["Articles with technical depth and novelty", "Articles with a unique, earned perspective", "Only include high-value product reviews or comparisons, no ad articles or bloatware", "Realistic and accurate AI news without hype","Updates to tools I use (Matlab/Simulink, Julia, Wolfram Alpha)", "New tools, languages, techniques, and frameworks."]
-disinterest = ["sensationalism and repetitive verbosity","local announcements or updates not directed to a general audience"]
+interest = ["Articles with technical depth and novelty", "Articles with a unique, earned perspective", "Only include high-value product reviews or comparisons, no ad articles or bloatware", "Realistic and accurate AI news without hype", "Updates to tools I use (Matlab/Simulink, Julia, Wolfram Alpha)", "New tools, languages, techniques, and frameworks.", "Ocean science, diving, and underwater exploration with real substance"]
+disinterest = ["sensationalism and repetitive verbosity", "local announcements or updates not directed to a general audience"]
 
 [category_limits]
 "Science" = 3
 "Math" = 2
 "Space" = 2
+"Ocean" = 2
 "Academic" = 3
+"Scientific Computing" = 2
 "Artificial Intelligence" = 2
 "Programming" = 2
 "Music" = 1

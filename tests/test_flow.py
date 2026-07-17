@@ -153,6 +153,15 @@ def test_flow_end_to_end_produces_pdf(prefect_harness, tmp_path, monkeypatch, mo
     # Decorations survived to the page.
     typ = (tmp_path / "out" / ".build" / f"{pdf.stem}.typ").read_text()
     assert "Event." in typ
+    assert "Flow Test" in typ
+
+    # The rendered article is now stamped as typeset; a second run with the
+    # same feed must not repeat it.
+    store = SimpleStore(str(tmp_path / "state.db"))
+    assert store.typeset_urls(["https://example.com/a"]) == {"https://example.com/a"}
+    pdf2 = run_papernews(config=config)
+    typ2 = (tmp_path / "out" / ".build" / f"{pdf2.stem}.typ").read_text()
+    assert "Flow Test" not in typ2
 
 
 # --- _is_transient unit coverage ---------------------------------------------
