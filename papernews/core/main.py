@@ -129,6 +129,35 @@ def triage_process_b_rank(
     return sorted(scored, key=lambda d: d.heuristic_score)
 
 
+@task(name="Stage 2B+: Already-Typeset Dedupe")
+def triage_process_dedupe(
+    documents: list[RawDocument], store: SimpleStore | None = None
+) -> list[RawDocument]:
+    """Drop articles already typeset into a previous edition.
+
+    Runs after ranking (so the recorded heuristic_score is the computed one)
+    and before the category budget (so already-published articles don't eat
+    category slots that fresh ones could fill). Every surviving-to-here doc
+    is recorded with a first_seen_at timestamp on its first sighting; the
+    typeset stamp itself is only written after a successful render.
+    """
+    store = store or SimpleStore()
+    now = datetime.now(UTC).isoformat()
+    for doc in documents:
+        store.record_processed(
+            url=doc.source_id,
+            title=doc.title,
+            category=doc.category,
+            heuristic_score=doc.heuristic_score,
+            seen_at=now,
+        )
+    already = store.typeset_urls([doc.source_id for doc in documents])
+    fresh = [doc for doc in documents if doc.source_id not in already]
+    if already:
+        print(f"Dedupe: skipped {len(already)} already-typeset article(s).")
+    return fresh
+
+
 @task(name="Stage 2C: Category Limit Enforcer")
 def triage_process_c_budget(
     documents: list[RawDocument], limits: dict[str, int], prefs: Preferences
@@ -273,14 +302,32 @@ def stage5_bespoke_render(
     return build_pdf(ctx, out_dir)
 
 
+@task(name="Stage 6: Record Edition")
+def stage6_record_edition(
+    articles: list[ArticleChunk], edition: str, store: SimpleStore | None = None
+) -> None:
+    """Stamp every article in the just-rendered edition as typeset.
+
+    Deliberately the last stage: a failed render never reaches it, so
+    articles from a broken run stay eligible for the next edition.
+    """
+    store = store or SimpleStore()
+    store.mark_typeset(
+        urls=[a.url for a in articles],
+        typeset_at=datetime.now(UTC).isoformat(),
+        edition=edition,
+    )
+
+
 @flow(name="Papernews Processing Flow", log_prints=True)
 def run_papernews(config: AppConfig) -> Path:
     raw_docs = stage1_ingestion(config)
 
     filtered = triage_process_a_filter(raw_docs, config.preferences)
     ranked = triage_process_b_rank(filtered, config.preferences)
+    fresh = triage_process_dedupe(ranked)
     budgeted = triage_process_c_budget(
-        ranked, config.category_limits, config.preferences
+        fresh, config.category_limits, config.preferences
     )
 
     article_chunks, total_telemetry = stage3_hybrid_construction(
@@ -299,6 +346,8 @@ def run_papernews(config: AppConfig) -> Path:
     )
 
     pdf_path = stage5_bespoke_render(enriched, total_telemetry, decorations, stats)
+
+    stage6_record_edition(enriched, edition=date.today().strftime("%Y-%m-%d"))
 
     return pdf_path
 

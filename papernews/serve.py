@@ -1,10 +1,13 @@
 """FastAPI web service for papernews.
 
 Routes:
-  GET  /              landing page (cover preview + 'Read today' link)
+  GET  /              landing page (cover preview, rebuild button, edit link)
   GET  /digest.pdf    newest edition PDF from the output directory
   GET  /preview.png   page-1 PNG of the newest edition
   GET  /sources       JSON list of configured sources
+  GET  /edit          sources.toml editor page
+  GET  /config        raw sources.toml text (JSON-wrapped)
+  POST /config        validate + write sources.toml, optionally rebuild
   GET  /healthz       liveness probe (?deep=1 adds last-build status)
   POST /ingest        trigger a pipeline run in the background
 
@@ -32,14 +35,16 @@ import os
 import subprocess
 import sys
 import threading
+import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from pydantic import BaseModel, ValidationError
 
-from papernews.config import AppConfig, load_config
+from papernews.config import AppConfig, load_config, parse_config
 from papernews.preview import render_cover_png
 
 # --- Config helpers -------------------------------------------------------
@@ -130,6 +135,13 @@ def _run_post_ingest_hook(pdf: Path) -> None:
 # --- FastAPI app -----------------------------------------------------------
 
 
+class ConfigUpdate(BaseModel):
+    """POST /config payload: new sources.toml text, optionally rebuild after."""
+
+    content: str
+    rebuild: bool = False
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="papernews", docs_url=None, redoc_url=None)
 
@@ -166,6 +178,46 @@ def create_app() -> FastAPI:
                 ],
             }
         )
+
+    @app.get("/edit", response_class=HTMLResponse)
+    def edit_page() -> str:
+        return _EDITOR_HTML
+
+    @app.get("/config")
+    def get_config() -> JSONResponse:
+        path = _config_path()
+        if not path.exists():
+            return JSONResponse(
+                {"error": f"config not found at {path}"}, status_code=404
+            )
+        return JSONResponse({"path": str(path), "content": path.read_text("utf-8")})
+
+    @app.post("/config")
+    def post_config(update: ConfigUpdate) -> JSONResponse:
+        # Validate before anything touches disk — a broken config must never
+        # replace a working one.
+        try:
+            cfg = parse_config(update.content)
+        except tomllib.TOMLDecodeError as e:
+            return JSONResponse({"error": f"invalid TOML: {e}"}, status_code=422)
+        except ValidationError as e:
+            return JSONResponse({"error": str(e)}, status_code=422)
+
+        # Write in place (no atomic tmp+rename): sources.toml is typically a
+        # single-file docker bind mount, and replacing the inode would detach
+        # the container's view of the file from the host's.
+        path = _config_path()
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(update.content)
+
+        body: dict = {"status": "saved", "sources": len(cfg.sources)}
+        if update.rebuild:
+            if _ingest_lock.locked():
+                body["rebuild"] = "already running"
+            else:
+                threading.Thread(target=_do_ingest, daemon=True).start()
+                body["rebuild"] = "started"
+        return JSONResponse(body)
 
     @app.get("/digest.pdf")
     def digest_pdf() -> Response:
@@ -287,20 +339,130 @@ _LANDING_HTML = """<!doctype html>
            margin: 4rem auto; padding: 0 1.25rem; color: #222; }
     h1   { font-size: 2.4rem; margin: 0 0 0.2rem; }
     .sub { color: #777; margin: 0 0 2rem; font-size: 1rem; }
-    a.cta { display: inline-block; padding: 0.7rem 1.4rem; border: 1px solid #222;
-            text-decoration: none; color: #222; font-weight: bold; margin-top: 1rem;}
-    a.cta:hover { background: #222; color: #fff; }
+    .row { display: flex; gap: 0.8rem; flex-wrap: wrap; margin-top: 1rem; }
+    a.cta, button.cta {
+            display: inline-block; padding: 0.7rem 1.4rem; border: 1px solid #222;
+            text-decoration: none; color: #222; font-weight: bold;
+            background: #fff; font-family: inherit; font-size: 1rem; cursor: pointer; }
+    a.cta:hover, button.cta:hover { background: #222; color: #fff; }
+    button.cta:disabled { opacity: 0.5; cursor: wait; }
     img.cover { width: 100%; height: auto; border: 1px solid #eee;
                 box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
     .meta { color: #999; font-size: 0.85rem; margin-top: 3rem; }
+    #status { color: #777; font-size: 0.9rem; margin-top: 0.8rem; min-height: 1.2em; }
   </style>
 </head>
 <body>
   <h1>papernews</h1>
   <p class="sub">A curated PDF you read on your Boox Note, not in a browser.</p>
   <img class="cover" src="/preview.png" alt="Cover preview">
-  <p><a class="cta" href="/digest.pdf">Read today (PDF)</a></p>
+  <div class="row">
+    <a class="cta" href="/digest.pdf">Read today (PDF)</a>
+    <button class="cta" id="rebuild">Rebuild now</button>
+    <a class="cta" href="/edit">Edit sources</a>
+  </div>
+  <p id="status"></p>
   <p class="meta">Updated automatically every few hours. <a href="/sources">Sources</a>.</p>
+  <script>
+    const btn = document.getElementById('rebuild');
+    const status = document.getElementById('status');
+    let poll = null;
+    async function refreshStatus() {
+      const r = await fetch('/healthz?deep=1');
+      const b = (await r.json()).last_build || {};
+      if (b.status === 'ok') {
+        status.textContent = 'Last build: ok (' + (b.time || '') + ')';
+        clearInterval(poll); poll = null; btn.disabled = false;
+        document.querySelector('img.cover').src = '/preview.png?t=' + Date.now();
+      } else if (b.status === 'error') {
+        status.textContent = 'Last build failed: ' + (b.error || 'unknown error');
+        clearInterval(poll); poll = null; btn.disabled = false;
+      } else {
+        status.textContent = 'Building…';
+      }
+    }
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      status.textContent = 'Starting…';
+      await fetch('/ingest', { method: 'POST' });
+      poll = setInterval(refreshStatus, 3000);
+    });
+  </script>
+</body>
+</html>
+"""
+
+_EDITOR_HTML = """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>papernews — edit sources</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body { font-family: Georgia, "Times New Roman", serif; max-width: 860px;
+           margin: 3rem auto; padding: 0 1.25rem; color: #222; }
+    h1   { font-size: 1.8rem; margin: 0 0 0.2rem; }
+    .sub { color: #777; margin: 0 0 1.5rem; font-size: 0.95rem; }
+    textarea { width: 100%; height: 60vh; font-family: ui-monospace, Menlo, Consolas,
+               monospace; font-size: 0.85rem; border: 1px solid #ccc;
+               padding: 0.8rem; box-sizing: border-box; }
+    .row { display: flex; gap: 0.8rem; flex-wrap: wrap; margin-top: 1rem; }
+    button.cta, a.cta {
+            display: inline-block; padding: 0.6rem 1.2rem; border: 1px solid #222;
+            color: #222; font-weight: bold; background: #fff; text-decoration: none;
+            font-family: inherit; font-size: 0.95rem; cursor: pointer; }
+    button.cta:hover, a.cta:hover { background: #222; color: #fff; }
+    button.cta:disabled { opacity: 0.5; cursor: wait; }
+    #status { margin-top: 1rem; font-size: 0.9rem; white-space: pre-wrap;
+              font-family: ui-monospace, Menlo, Consolas, monospace; }
+    #status.ok { color: #2a6f2a; }
+    #status.err { color: #a33; }
+  </style>
+</head>
+<body>
+  <h1>Edit sources</h1>
+  <p class="sub">This is <code>sources.toml</code>. Saves are validated first —
+     a broken config is rejected and the current one stays in place.</p>
+  <textarea id="toml" spellcheck="false">loading…</textarea>
+  <div class="row">
+    <button class="cta" id="save">Save</button>
+    <button class="cta" id="saveRebuild">Save &amp; rebuild</button>
+    <a class="cta" href="/">← Back</a>
+  </div>
+  <p id="status"></p>
+  <script>
+    const ta = document.getElementById('toml');
+    const status = document.getElementById('status');
+    fetch('/config').then(r => r.json()).then(b => { ta.value = b.content || ''; });
+    async function save(rebuild) {
+      const btns = document.querySelectorAll('button');
+      btns.forEach(b => b.disabled = true);
+      status.className = ''; status.textContent = 'Saving…';
+      try {
+        const r = await fetch('/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: ta.value, rebuild }),
+        });
+        const b = await r.json();
+        if (r.ok) {
+          status.className = 'ok';
+          status.textContent = 'Saved (' + b.sources + ' sources)'
+            + (b.rebuild ? ' — rebuild ' + b.rebuild : '');
+        } else {
+          status.className = 'err';
+          status.textContent = b.error || 'Save failed';
+        }
+      } catch (e) {
+        status.className = 'err';
+        status.textContent = 'Save failed: ' + e;
+      } finally {
+        btns.forEach(b => b.disabled = false);
+      }
+    }
+    document.getElementById('save').addEventListener('click', () => save(false));
+    document.getElementById('saveRebuild').addEventListener('click', () => save(true));
+  </script>
 </body>
 </html>
 """

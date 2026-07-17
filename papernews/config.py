@@ -73,15 +73,24 @@ class AppConfig(BaseModel):
         return self
 
 
-def load_config(path: Path | str) -> AppConfig:
-    """Load and validate `sources.toml` into an AppConfig."""
-    with open(path, "rb") as f:
-        raw = tomllib.load(f)
+def parse_config(text: str) -> AppConfig:
+    """Validate raw `sources.toml` text into an AppConfig.
+
+    Raises tomllib.TOMLDecodeError on bad TOML and pydantic.ValidationError
+    on schema violations — the web editor surfaces both before anything is
+    written to disk.
+    """
+    raw = tomllib.loads(text)
     return AppConfig(
         sources=raw.get("source", []),
         preferences=raw.get("preferences", {}),
         category_limits=raw.get("category_limits", {}),
     )
+
+
+def load_config(path: Path | str) -> AppConfig:
+    """Load and validate `sources.toml` into an AppConfig."""
+    return parse_config(Path(path).read_text(encoding="utf-8"))
 
 
 class Settings(BaseSettings):

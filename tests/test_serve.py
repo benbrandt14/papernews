@@ -252,6 +252,87 @@ def test_digest_pdf_serves_newest_edition(client, tmp_path, monkeypatch):
     assert r.content == b"%PDF-new"
 
 
+# --- 6: sources.toml web editor ---------------------------------------------
+
+_VALID_TOML = (
+    '[[source]]\nname = "Example"\nkind = "rss"\nurl = "https://example.com/feed"\n'
+    'category = "Tech"\n'
+)
+
+
+@pytest.fixture
+def editable_config(tmp_path, monkeypatch):
+    cfg = tmp_path / "sources.toml"
+    cfg.write_text(_VALID_TOML)
+    monkeypatch.setenv("PAPERNEWS_CONFIG", str(cfg))
+    return cfg
+
+
+def test_edit_page_serves_editor(client):
+    r = client.get("/edit")
+    assert r.status_code == 200
+    assert "sources.toml" in r.text
+
+
+def test_get_config_returns_raw_toml(client, editable_config):
+    r = client.get("/config")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["content"] == _VALID_TOML
+    assert body["path"] == str(editable_config)
+
+
+def test_get_config_404_when_missing(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("PAPERNEWS_CONFIG", str(tmp_path / "nope.toml"))
+    r = client.get("/config")
+    assert r.status_code == 404
+
+
+def test_post_config_saves_valid_toml(client, editable_config):
+    new = _VALID_TOML + '\n[[source]]\nname = "HN"\nkind = "hn"\ncategory = "HN"\n'
+    r = client.post("/config", json={"content": new})
+    assert r.status_code == 200
+    assert r.json() == {"status": "saved", "sources": 2}
+    assert editable_config.read_text() == new
+
+
+def test_post_config_rejects_bad_toml_without_writing(client, editable_config):
+    r = client.post("/config", json={"content": "[[source\nbroken"})
+    assert r.status_code == 422
+    assert "invalid TOML" in r.json()["error"]
+    assert editable_config.read_text() == _VALID_TOML  # untouched
+
+
+def test_post_config_rejects_schema_violation_without_writing(client, editable_config):
+    # kind='rss' without a url fails AppConfig validation.
+    bad = '[[source]]\nname = "NoUrl"\nkind = "rss"\ncategory = "Tech"\n'
+    r = client.post("/config", json={"content": bad})
+    assert r.status_code == 422
+    assert "url" in r.json()["error"]
+    assert editable_config.read_text() == _VALID_TOML
+
+
+def test_post_config_rebuild_kicks_ingest(client, editable_config, mocker):
+    ran = mocker.patch.object(serve, "_do_ingest")
+    r = client.post("/config", json={"content": _VALID_TOML, "rebuild": True})
+    assert r.status_code == 200
+    assert r.json()["rebuild"] == "started"
+    import time
+
+    for _ in range(50):
+        if ran.called:
+            break
+        time.sleep(0.01)
+    ran.assert_called_once()
+
+
+def test_landing_page_has_rebuild_and_edit(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert 'id="rebuild"' in r.text
+    assert "/edit" in r.text
+
+
 def test_sources_lists_configured_sources(client, tmp_path, monkeypatch):
     cfg = tmp_path / "sources.toml"
     cfg.write_text(

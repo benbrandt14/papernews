@@ -5,15 +5,20 @@ An offline-first, highly customized E-Ink daily digest. A Prefect pipeline pulls
 ## Pipeline Stages
 
 1. **Stage 1: Ingestion** — Dynamically loads plugins (RSS, Hacker News, Wiki). Outputs strict Pydantic `RawDocument` models.
-2. **Stage 2: Filtering** — Enforces deterministic category limits, local ranking heuristics, and regex blacklists natively in Python (zero API cost).
+2. **Stage 2: Filtering** — Enforces deterministic category limits, local ranking heuristics, and regex blacklists natively in Python (zero API cost). An article registry in SQLite records every processed article (URL, computed heuristic score, first-seen timestamp) and drops anything already typeset into a previous edition, so no story ever repeats.
 3. **Stage 3: LLM Handling** — Routes surviving documents to the configured provider (any OpenAI-compatible API; DeepSeek by default, OpenRouter or a local Ollama/vLLM server by env switch) for gatekeeper selection, summarization, and strict markdown formatting. Enforces Pydantic schema validation and tracks token `Telemetry`. Article bodies are parsed into the markdown IR (`Block`/`Span`) here.
 4. **Stage 3.5: Enrichment** — A whole-day, cross-article pass (`enrich_articles` plugins) that attaches sidecar data in place. The **curiosity queue** lives here: it asks the LLM for a few researchable questions per lead story, parks them in SQLite, and resolves *earlier* runs' questions against the OpenAlex corpus — answered pairs surface on the front matter.
 5. **Stage 4: Templating** — The adapter (`adapter.py`) flattens the typed `RenderContext` into the plain dictionaries the template consumes, keeping layout logic strictly decoupled.
 6. **Stage 5: Render** — Jinja injects the adapted data into a Typst template (`template.typ.j2`); the typed emitter (`typst_emit.emit_blocks`) turns the markdown IR into Typst, escaping exactly once with no sentinel tokens.
+7. **Stage 6: Record Edition** — Only after the PDF compiles successfully, every article in it is stamped `typeset_at` (+ edition date) in the registry. A failed run leaves its articles eligible for the next edition; a successful one retires them for good.
 
 ## Configuration (`sources.toml`)
 
-Manage your feeds and categories in `sources.toml`. Order matters: sources appear in this sequence in the generated PDF.
+Manage your feeds and categories in `sources.toml` — either by hand, or in the
+browser at `http://localhost:8000/edit` (a validated editor: broken TOML or a
+schema violation is rejected before anything is written, and "Save & rebuild"
+kicks off a fresh ingest immediately). Order matters: sources appear in this
+sequence in the generated PDF.
 
 ```toml
 [[source]]
@@ -59,8 +64,10 @@ On first boot the server builds an initial edition automatically (no need to wai
 **API Interaction:**
 The application exposes a web server at `http://localhost:8000`.
 
-* To trigger a new compilation pipeline run, send a request to the `/ingest` endpoint.
+* To trigger a new compilation pipeline run, send a request to the `/ingest` endpoint (or use the "Rebuild now" button on the landing page).
+* Edit sources in the browser at `/edit`; the file is validated before every save, and `sources.toml` is bind-mounted read-write so changes persist on the host.
 * State (SQLite) and PDF outputs live in `./data/state.db` and `./data/output/` (bind-mounted from the host).
+* The state DB includes the **article registry** — which URLs were processed when (with their computed heuristic scores) and which edition typeset them. Deleting it makes previously published articles eligible again.
 * **Resetting State:** To perform a hard reset, simply delete `data/state.db` and restart the container. The database schema will automatically rebuild on boot.
 * **Verify the LLM provider:** `docker compose exec papernews papernews check-llm` (and `papernews providers` to list presets).
 
