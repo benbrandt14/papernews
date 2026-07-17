@@ -18,24 +18,26 @@ class Annotation(BaseModel):
 
 
 class AITextMetrics(BaseModel):
-    """Article-level stylometrics from the AI-likeness screen (ai_detect.py).
+    """Article-level output of the AI-likeness screen (ai_detect.py).
 
     Computed on the ingested source text, before the LLM rewrites anything.
-    `ai_likelihood` is a noise dial (0 = human-flavored, 1 = formulaic LLM
-    filler), not a forensic verdict; when `reliable` is False the sample was
-    too small and the pipeline must not act on the score.
+    `ai_likelihood` is the trained classifier's calibrated probability
+    (0 = human-flavored, 1 = machine-flavored) — None when no model
+    artifact is installed, in which case the screen never deranks and only
+    the descriptive stylometrics render. When `reliable` is False the
+    sample was too small and the pipeline must not act on the score.
     """
 
-    ai_likelihood: float = 0.0
+    ai_likelihood: float | None = None
+    model_id: str | None = None  # provenance of the classifier artifact
     burstiness: float = 0.0  # sentence-length coefficient of variation
     lexical_diversity: float = 0.0  # moving-window type/token ratio
-    stock_phrases_per_1k: float = 0.0  # LLM-tell phrase hits per 1000 words
     word_count: int = 0
     reliable: bool = False
 
     @property
     def formatted_likelihood(self) -> str:
-        return f"{self.ai_likelihood:.0%}"
+        return "" if self.ai_likelihood is None else f"{self.ai_likelihood:.0%}"
 
     @property
     def formatted_burstiness(self) -> str:
@@ -44,10 +46,6 @@ class AITextMetrics(BaseModel):
     @property
     def formatted_diversity(self) -> str:
         return f"{self.lexical_diversity:.2f}"
-
-    @property
-    def formatted_phrase_rate(self) -> str:
-        return f"{self.stock_phrases_per_1k:.1f}"
 
 
 class RawDocument(BaseModel):

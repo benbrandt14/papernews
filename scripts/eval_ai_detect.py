@@ -1,97 +1,45 @@
 #!/usr/bin/env python3
-"""Empirical evaluation of papernews.ai_detect against a labeled corpus.
+"""Empirical evaluation of the AI-likeness classifier on a labeled corpus.
 
-The AI-likeness screen ships with hand-set weights (see ai_detect.py for
-why the upstream AITextDetector model couldn't be reused: it is trained
-on Chinese creative writing). This harness measures how those weights
-actually discriminate on labeled English human/LLM text, so the
-threshold knobs in [preferences] can be set on evidence instead of vibes.
+Scores every sample with the *installed* classifier artifact (the same
+pure-Python inference path the pipeline runs — papernews.ai_detect) and
+reports ROC-AUC, per-class score distributions, and the derank /
+false-positive rates at the configured threshold. Train an artifact
+first with scripts/train_ai_classifier.py; evaluating on a corpus the
+model wasn't trained on (e.g. train on HC3, evaluate on a
+ghostbuster-data slice) is the honest way to read these numbers.
 
-Default corpus: HC3-English (Hello-SimpleAI, ~24k QA pairs with both
-human and ChatGPT answers; the standard labeled human/LLM corpus).
-Caveats to keep in mind when reading results: HC3 is Q&A prose, not
-news, and its generations are ChatGPT-3.5-era — treat the numbers as a
-sanity floor, not a certificate.
+Usage (needs network for the one-time HC3 download; run locally or in
+CI — the Claude sandbox blocks huggingface.co):
 
-Usage (needs network for the one-time download; run locally or in CI —
-the Claude sandbox blocks huggingface.co):
-
-    uv run python scripts/eval_ai_detect.py                # download + evaluate
+    uv run python scripts/eval_ai_detect.py                # HC3 → evaluate
     uv run python scripts/eval_ai_detect.py --limit 4000   # faster subsample
     uv run python scripts/eval_ai_detect.py --threshold 0.5
-    uv run python scripts/eval_ai_detect.py --jsonl my.jsonl  # any local corpus
-    uv run python scripts/eval_ai_detect.py --train-baseline  # needs scikit-learn
-    uv run python scripts/eval_ai_detect.py --smoke        # offline plumbing check
-
-A local --jsonl file must contain records with "human_answers" and/or
-"chatgpt_answers" string-list fields (HC3's schema).
-
---train-baseline additionally trains the exact AITextDetector recipe
-(TfidfVectorizer(analyzer="char", ngram_range=(2, 4)) + LinearSVC) on
-an 80/20 split of the same corpus, showing what a trained linear model
-buys over the hand-set weights. Requires `uv pip install scikit-learn`.
-
-Reports ROC-AUC (threshold-free), per-class score distributions, and
-the derank/false-positive rates at the configured threshold.
+    uv run python scripts/eval_ai_detect.py --jsonl my.jsonl   # any HC3-schema corpus
+    uv run python scripts/eval_ai_detect.py --ghostbuster DIR  # ghostbuster-data checkout
+    uv run --with scikit-learn python scripts/eval_ai_detect.py --smoke  # offline check
 """
 
 from __future__ import annotations
 
 import argparse
-import json
+import os
 import random
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from papernews.ai_detect import score_text  # noqa: E402
+from train_ai_classifier import (  # noqa: E402
+    Sample,
+    download_hc3,
+    load_ghostbuster_dir,
+    load_hc3_jsonl,
+)
 
-HC3_URL = "https://huggingface.co/datasets/Hello-SimpleAI/HC3/resolve/main/all.jsonl"
-CACHE = Path(__file__).resolve().parent / ".cache" / "hc3_all.jsonl"
-
-# (label, text) — label 1 = AI-generated.
-Sample = tuple[int, str]
-
-
-def download_hc3() -> Path:
-    if CACHE.exists():
-        print(f"using cached corpus: {CACHE}")
-        return CACHE
-    import requests
-
-    print(f"downloading HC3-English: {HC3_URL}")
-    CACHE.parent.mkdir(parents=True, exist_ok=True)
-    with requests.get(HC3_URL, stream=True, timeout=120) as r:
-        r.raise_for_status()
-        with open(CACHE, "wb") as f:
-            for chunk in r.iter_content(1 << 20):
-                f.write(chunk)
-    print(f"saved to {CACHE} ({CACHE.stat().st_size / 1e6:.1f} MB)")
-    return CACHE
-
-
-def load_samples(path: Path, limit: int | None, seed: int) -> list[Sample]:
-    """One sample per answer, keeping only reliably-sized texts.
-
-    The screen only ever acts on `reliable` scores, so the evaluation
-    mirrors that: too-short answers are excluded up front.
-    """
-    samples: list[Sample] = []
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            rec = json.loads(line)
-            for label, key in ((0, "human_answers"), (1, "chatgpt_answers")):
-                for text in rec.get(key) or []:
-                    if text and score_text(text).reliable:
-                        samples.append((label, text))
-    random.Random(seed).shuffle(samples)
-    if limit:
-        samples = samples[:limit]
-    return samples
+from papernews.ai_detect import get_classifier, score_text  # noqa: E402
 
 
 def roc_auc(pairs: list[tuple[int, float]]) -> float:
@@ -143,11 +91,24 @@ def summarize(name: str, scores: list[float]) -> None:
 
 
 def evaluate(samples: list[Sample], threshold: float) -> None:
-    pairs = [(label, score_text(text).ai_likelihood) for label, text in samples]
+    clf = get_classifier()
+    if clf is None:
+        raise SystemExit(
+            "no classifier artifact installed — train one first:\n"
+            "  uv run --with scikit-learn python scripts/train_ai_classifier.py\n"
+            "or point PAPERNEWS_AI_MODEL at an artifact."
+        )
+    print(f"classifier: {clf.model_id} (trained on {clf.metadata.get('corpus', '?')})")
+
+    pairs: list[tuple[int, float]] = []
+    for label, text in samples:
+        m = score_text(text)
+        if m.reliable and m.ai_likelihood is not None:
+            pairs.append((label, m.ai_likelihood))
     human = [s for label, s in pairs if label == 0]
     ai = [s for label, s in pairs if label == 1]
 
-    print(f"\n=== papernews.ai_detect on {len(pairs)} labeled samples ===")
+    print(f"\n=== {len(pairs)} reliable labeled samples ===")
     print(f"ROC-AUC: {roc_auc(pairs):.4f}  (0.5 = coin flip, 1.0 = perfect)")
     summarize("human-written scores", human)
     summarize("AI-generated scores", ai)
@@ -163,84 +124,57 @@ def evaluate(samples: list[Sample], threshold: float) -> None:
     )
 
 
-def train_baseline(samples: list[Sample], seed: int) -> None:
-    """The upstream AITextDetector recipe, retrained on this English corpus."""
-    try:
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        from sklearn.metrics import accuracy_score, roc_auc_score
-        from sklearn.svm import LinearSVC
-    except ImportError:
-        raise SystemExit(
-            "--train-baseline needs scikit-learn: uv pip install scikit-learn"
-        ) from None
+def smoke() -> None:
+    """Offline plumbing check: train a throwaway model on two synthetic
+    registers, install it via PAPERNEWS_AI_MODEL, evaluate on held-out
+    samples from the same registers."""
+    from train_ai_classifier import export, train
 
-    rng = random.Random(seed)
-    shuffled = samples[:]
-    rng.shuffle(shuffled)
-    cut = int(len(shuffled) * 0.8)
-    train, test = shuffled[:cut], shuffled[cut:]
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tests"))
+    from conftest import _AI_POOL, _HUMAN_POOL  # type: ignore[import-not-found]
 
-    print("\n=== trained baseline (TF-IDF char 2-4 + LinearSVC) ===")
-    print(f"train {len(train)} / test {len(test)}")
-    tfidf = TfidfVectorizer(analyzer="char", ngram_range=(2, 4), min_df=2)
-    x_train = tfidf.fit_transform([t for _, t in train])
-    svc = LinearSVC()
-    svc.fit(x_train, [label for label, _ in train])
-
-    x_test = tfidf.transform([t for _, t in test])
-    y_test = [label for label, _ in test]
-    print(f"accuracy: {accuracy_score(y_test, svc.predict(x_test)):.4f}")
-    print(f"ROC-AUC:  {roc_auc_score(y_test, svc.decision_function(x_test)):.4f}")
-    print(f"features: {len(tfidf.vocabulary_)} char n-grams")
-
-
-SMOKE_HUMAN = (
-    "The launch slipped again. Nobody at the pad seemed surprised. Engineers "
-    "flagged a helium leak on Tuesday, and by Thursday the fix was still being "
-    "argued over in a windowless conference room. The customer, a small "
-    "startup out of Helsinki, took the delay in stride; their last ride waited "
-    "five months. What worries the range office is the weather, since a front "
-    "is stalling over the Gulf and the recovery ship cannot hold station in "
-    "nine-foot swells. If Saturday scrubs, the next window opens on the 14th. "
-    "Meanwhile the booster sat in the hangar, grid fins folded. Turnaround "
-    "used to take months. Now the bottleneck is paperwork, one official "
-    "joked, not hardware. Nobody laughed harder than the schedulers."
-)
-SMOKE_AI = (
-    "In today's fast-paced world, this launch is a testament to human "
-    "ingenuity. The mission plays a crucial role in the ever-evolving "
-    "landscape of spaceflight. Moreover, the rocket seamlessly integrates "
-    "cutting-edge technology with proven practices. It's important to note "
-    "that the provider has embarked on a journey to revolutionize access to "
-    "orbit. Furthermore, the booster underscores the importance of "
-    "sustainable solutions. Additionally, the mission provides valuable "
-    "insights into the future of the industry. In conclusion, this launch is "
-    "a game-changer that will elevate your understanding of rocketry. "
-    "Whether you're a casual observer or a seasoned expert, the ever-changing "
-    "landscape offers a rich tapestry of innovation delivered seamlessly."
-)
+    rng = random.Random(11)
+    # 12 sentences ≈ 140 words: comfortably above the reliability floor.
+    make = lambda pool: " ".join(rng.choices(pool, k=12))  # noqa: E731
+    samples = [(0, make(_HUMAN_POOL)) for _ in range(80)] + [
+        (1, make(_AI_POOL)) for _ in range(80)
+    ]
+    held_out = [(0, make(_HUMAN_POOL)) for _ in range(20)] + [
+        (1, make(_AI_POOL)) for _ in range(20)
+    ]
+    artifact = train(samples, (2, 4), 4000, 2, 11, "smoke")
+    with tempfile.TemporaryDirectory() as td:
+        out = Path(td) / "smoke_model.json.gz"
+        export(artifact, out, samples)
+        os.environ["PAPERNEWS_AI_MODEL"] = str(out)
+        evaluate(held_out, threshold=0.6)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--jsonl", type=Path, help="local corpus instead of HC3")
+    ap.add_argument("--jsonl", type=Path, help="local HC3-schema corpus instead of HC3")
+    ap.add_argument("--ghostbuster", type=Path, help="ghostbuster-data checkout dir")
     ap.add_argument("--limit", type=int, help="subsample size (after shuffle)")
     ap.add_argument("--threshold", type=float, default=0.6)
     ap.add_argument("--seed", type=int, default=1789)
-    ap.add_argument("--train-baseline", action="store_true")
     ap.add_argument("--smoke", action="store_true", help="offline plumbing check")
     args = ap.parse_args()
 
     if args.smoke:
-        samples: list[Sample] = [(0, SMOKE_HUMAN), (1, SMOKE_AI)] * 20
-        evaluate(samples, args.threshold)
+        smoke()
         return
 
-    path = args.jsonl or download_hc3()
-    samples = load_samples(path, args.limit, args.seed)
+    samples: list[Sample] = []
+    if args.ghostbuster:
+        samples += load_ghostbuster_dir(args.ghostbuster)
+    if args.jsonl:
+        samples += load_hc3_jsonl(args.jsonl)
+    if not samples:
+        samples = load_hc3_jsonl(download_hc3())
+    random.Random(args.seed).shuffle(samples)
+    if args.limit:
+        samples = samples[: args.limit]
     evaluate(samples, args.threshold)
-    if args.train_baseline:
-        train_baseline(samples, args.seed)
 
 
 if __name__ == "__main__":

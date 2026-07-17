@@ -352,8 +352,10 @@
     #line(length: 18%, stroke: 0.4pt + luma(55%))
     #v(0.35 * u)
     #text(font: sans, size: 7pt, tracking: 0.05em, fill: luma(45%))[
-      ((* if art.ai_metrics.reliable *))
-      #upper[Stylometrics] #sym.dot.c AI-likeness ((( art.ai_metrics.formatted_likelihood ))) #sym.dot.c burstiness ((( art.ai_metrics.formatted_burstiness ))) #sym.dot.c lexical diversity ((( art.ai_metrics.formatted_diversity ))) #sym.dot.c stock phrases ((( art.ai_metrics.formatted_phrase_rate ))) per 1k words
+      ((* if art.ai_metrics.reliable and art.ai_metrics.ai_likelihood is not none *))
+      #upper[Stylometrics] #sym.dot.c AI-likeness ((( art.ai_metrics.formatted_likelihood ))) #sym.dot.c burstiness ((( art.ai_metrics.formatted_burstiness ))) #sym.dot.c lexical diversity ((( art.ai_metrics.formatted_diversity ))) #sym.dot.c model ((( art.ai_metrics.model_id | typst )))
+      ((* elif art.ai_metrics.reliable *))
+      #upper[Stylometrics] #sym.dot.c burstiness ((( art.ai_metrics.formatted_burstiness ))) #sym.dot.c lexical diversity ((( art.ai_metrics.formatted_diversity ))) #sym.dot.c no classifier trained
       ((* else *))
       #upper[Stylometrics] #sym.dot.c source too short to profile #sym.dot.c ((( art.ai_metrics.word_count ))) words
       ((* endif *))

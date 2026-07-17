@@ -95,9 +95,9 @@ def test_article_to_dict_ai_metrics():
         url="URL",
         ai_metrics=AITextMetrics(
             ai_likelihood=0.72,
+            model_id="svc-char24-en-20k",
             burstiness=0.31,
             lexical_diversity=0.66,
-            stock_phrases_per_1k=4.2,
             word_count=850,
             reliable=True,
         ),
@@ -106,10 +106,18 @@ def test_article_to_dict_ai_metrics():
     m = data["ai_metrics"]
     assert m["reliable"] is True
     assert m["word_count"] == 850
+    assert m["model_id"] == "svc-char24-en-20k"
     assert m["formatted_likelihood"] == "72%"
     assert m["formatted_burstiness"] == "0.31"
     assert m["formatted_diversity"] == "0.66"
-    assert m["formatted_phrase_rate"] == "4.2"
+
+    # No classifier installed: likelihood stays None, formatted empty.
+    chunk_no_model = chunk.model_copy(
+        update={"ai_metrics": AITextMetrics(burstiness=0.5, reliable=True)}
+    )
+    m2 = article_to_dict(chunk_no_model)["ai_metrics"]
+    assert m2["ai_likelihood"] is None
+    assert m2["formatted_likelihood"] == ""
 
 
 def test_article_to_dict_without_ai_metrics():

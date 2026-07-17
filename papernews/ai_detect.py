@@ -1,95 +1,130 @@
-"""Article-level AI-likeness scoring for the Stage 2 triage funnel.
+"""Article-level AI-likeness classification for the Stage 2 triage funnel.
 
-Adapted from lyc8503/AITextDetector, which separates human from LLM text
-with a linear SVM over character n-gram TF-IDF features. That model is
-trained exclusively on Chinese creative writing and does not transfer to
-English news prose, so this module keeps the shape of the approach — a
-deterministic lexical feature vector fed into a fixed linear decision
-function — and swaps the learned n-gram weights for hand-set stylometric
-features that target English LLM filler:
+This implements the lyc8503/AITextDetector architecture — a linear SVM
+over character n-gram TF-IDF features — for English text. The upstream
+trained weights couldn't be reused (they are trained exclusively on
+Chinese creative writing), so the model here is trained on a labeled
+English human/LLM corpus by `scripts/train_ai_classifier.py`, which
+exports the fitted vectorizer + SVM + probability calibration into a
+small JSON artifact (`papernews/ai_model.json.gz` by default,
+overridable via PAPERNEWS_AI_MODEL).
 
-  * burstiness — variance of sentence length; LLM prose runs unusually
-    uniform, human prose alternates short and long sentences.
-  * lexical diversity — moving-window type/token ratio; formulaic text
-    recycles the same vocabulary.
-  * stock-phrase rate — hits per 1000 words against a fixed lexicon of
-    LLM-tell phrases ("delve", "tapestry", "in today's fast-paced
-    world", …).
+Inference is re-implemented in pure Python (an exact replica of
+scikit-learn's TfidfVectorizer(analyzer="char") → LinearSVC decision
+function, pinned by parity tests) so the pipeline keeps its Stage 2
+invariants: deterministic, offline, zero API cost, and no ML runtime
+dependencies. scikit-learn is needed only at training time.
+
+When no model artifact is present, articles still get descriptive
+stylometrics (sentence-length burstiness, moving-window type/token
+ratio) for the typeset footer, but `ai_likelihood` stays None and the
+triage screen never deranks — the score comes from the trained
+classifier or not at all.
 
 The output is a noise dial, not a verdict: scores exist to derank
-low-signal, formulaic articles below the category-budget cut line, and
-false negatives are acceptable by design. Everything here is pure Python
-and deterministic — no network, no model files, no third-party
-dependencies — per the Stage 2 zero-API-cost invariant.
+low-signal articles below the category-budget cut line, and false
+negatives are acceptable by design.
 """
 
 from __future__ import annotations
 
+import gzip
+import json
+import math
 import re
+from functools import lru_cache
+from pathlib import Path
 from statistics import mean, pstdev
 
+from papernews.config import get_settings
 from papernews.models import AITextMetrics
 
-# Below these sizes the statistics are dominated by sampling noise, so the
-# result is flagged unreliable and the triage funnel must never act on it.
+DEFAULT_MODEL_PATH = Path(__file__).parent / "ai_model.json.gz"
+
+# Below these sizes the statistics (and a char-n-gram classification) are
+# dominated by sampling noise, so the result is flagged unreliable and the
+# triage funnel must never act on it.
 MIN_RELIABLE_WORDS = 100
 MIN_RELIABLE_SENTENCES = 4
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\n+")
 _WORD = re.compile(r"[a-z0-9']+")
-
-# The fixed "vocabulary" of the linear model: phrases heavily over-represented
-# in LLM filler relative to edited human prose. Ordinary academic connectives
-# are matched only in their comma-terminated discourse-marker form so that
-# arXiv abstracts aren't blanket-flagged.
-_STOCK_PHRASE_PATTERNS = [
-    r"\bdelv(?:e|es|ed|ing)\b",
-    r"\btapestr(?:y|ies)\b",
-    r"\btreasure trove\b",
-    r"\bgame.?changer\b",
-    r"\ba testament to\b",
-    r"\bin today's (?:fast.paced|digital|modern|ever.changing) \w+",
-    r"\bin the ever.evolving\b",
-    r"\bever.changing landscape\b",
-    r"\bnavigat(?:e|ing) the (?:complexities|landscape|world)\b",
-    r"\bunlock(?:s|ing)? the (?:power|potential|secrets)\b",
-    r"\b(?:harness|leverage|leveraging|harnessing) the power\b",
-    r"\bseamless(?:ly)? integrat\w*",
-    r"\bembark(?:s|ed|ing)? on a journey\b",
-    r"\bunderscor(?:e|es|ed|ing) the (?:importance|significance)\b",
-    r"\bplays? a (?:crucial|pivotal|vital|key) role\b",
-    r"\b(?:valuable|actionable|key) insights\b",
-    r"\bit(?:'s| is) (?:important|worth) not(?:ing|e)\b",
-    r"\bin conclusion,",
-    r"\bin summary,",
-    r"\blook no further\b",
-    r"\bwhether you(?:'re| are) a\b",
-    r"\bdive (?:into the world of|deeper into)\b",
-    r"\blet's dive\b",
-    r"\belevate your\b",
-    r"\brevolutioniz\w+",
-    r"\bas an ai language model\b",
-    r"\b(?:moreover|furthermore|additionally),",
-]
-_STOCK_PHRASES = re.compile("|".join(_STOCK_PHRASE_PATTERNS), re.IGNORECASE)
-
-# Hand-set weights of the linear decision function (they sum to 1, so the
-# combined score is already in [0, 1] — no squashing needed).
-_W_STOCK_PHRASES = 0.50
-_W_BURSTINESS = 0.30
-_W_DIVERSITY = 0.20
+# scikit-learn's VectorizerMixin collapses all whitespace runs to a single
+# space before char n-gram extraction; inference must match exactly.
+_WHITESPACE = re.compile(r"\s\s+")
 
 _MATTR_WINDOW = 100
 
 
-def _ramp(value: float, at_zero: float, at_one: float) -> float:
-    """Linear map of `value` onto [0, 1], clamped.
+class LinearTextClassifier:
+    """Pure-Python inference for the exported char-n-gram TF-IDF + SVM.
 
-    `at_zero`/`at_one` are the feature values that map to 0 and 1
-    respectively; passing at_zero > at_one inverts the ramp.
+    Replicates scikit-learn exactly: lowercase, collapse whitespace runs,
+    extract all contiguous character n-grams in the trained range, weight
+    raw counts by stored IDF, L2-normalize, dot with the SVM coefficients,
+    then map the decision value through the fitted Platt sigmoid to a
+    probability. Parity with sklearn is pinned by tests.
     """
-    t = (value - at_zero) / (at_one - at_zero)
-    return min(1.0, max(0.0, t))
+
+    def __init__(self, artifact: dict):
+        self.model_id: str = artifact["model_id"]
+        self.ngram_min, self.ngram_max = artifact["ngram_range"]
+        self.vocabulary: dict[str, int] = artifact["vocabulary"]
+        self.idf: list[float] = artifact["idf"]
+        self.coef: list[float] = artifact["coef"]
+        self.intercept: float = artifact["intercept"]
+        # Platt scaling: p = sigmoid(a * decision + b)
+        self.calib_a: float = artifact["calibration"]["a"]
+        self.calib_b: float = artifact["calibration"]["b"]
+        self.metadata: dict = artifact.get("metadata", {})
+
+    @classmethod
+    def load(cls, path: Path) -> LinearTextClassifier:
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            return cls(json.load(f))
+
+    def _counts(self, text: str) -> dict[int, int]:
+        doc = _WHITESPACE.sub(" ", text.lower())
+        counts: dict[int, int] = {}
+        vocab = self.vocabulary
+        for n in range(self.ngram_min, min(self.ngram_max, len(doc)) + 1):
+            for i in range(len(doc) - n + 1):
+                idx = vocab.get(doc[i : i + n])
+                if idx is not None:
+                    counts[idx] = counts.get(idx, 0) + 1
+        return counts
+
+    def decision(self, text: str) -> float:
+        counts = self._counts(text)
+        if not counts:
+            return self.intercept
+        norm = math.sqrt(sum((c * self.idf[i]) ** 2 for i, c in counts.items()))
+        if norm == 0:
+            return self.intercept
+        dot = sum(c * self.idf[i] * self.coef[i] for i, c in counts.items())
+        return dot / norm + self.intercept
+
+    def predict_proba(self, text: str) -> float:
+        """Probability the text is AI-generated, in [0, 1]."""
+        z = self.calib_a * self.decision(text) + self.calib_b
+        return 1.0 / (1.0 + math.exp(-z)) if z > -60 else 0.0
+
+
+@lru_cache(maxsize=4)
+def _load_classifier(path: str) -> LinearTextClassifier | None:
+    p = Path(path)
+    return LinearTextClassifier.load(p) if p.is_file() else None
+
+
+def get_classifier() -> LinearTextClassifier | None:
+    """The active classifier, or None when no artifact has been trained.
+
+    Resolution order: PAPERNEWS_AI_MODEL (Settings.ai_model), then the
+    packaged default path. Cached per path; scoring a whole edition loads
+    the artifact once.
+    """
+    override = get_settings().ai_model
+    return _load_classifier(str(override or DEFAULT_MODEL_PATH))
 
 
 def _sentences(text: str) -> list[list[str]]:
@@ -139,32 +174,27 @@ def _moving_ttr(words: list[str], window: int = _MATTR_WINDOW) -> float:
 def score_text(text: str) -> AITextMetrics:
     """Score one article body. Pure and deterministic.
 
-    Returns populated `AITextMetrics`; `reliable=False` means the sample
-    was too small for the statistics to mean anything, and callers must
-    not penalize the document.
+    `ai_likelihood` is the trained classifier's calibrated probability, or
+    None when no model artifact is available. `reliable=False` means the
+    sample was too small for either the classifier or the stylometrics to
+    mean anything, and callers must not penalize the document.
     """
     sentences = _sentences(text)
     words = [w for s in sentences for w in s]
     word_count = len(words)
 
-    burstiness = _burstiness([len(s) for s in sentences])
-    diversity = _moving_ttr(words)
-    phrase_hits = len(_STOCK_PHRASES.findall(text))
-    phrase_rate = phrase_hits / word_count * 1000 if word_count else 0.0
-
-    # Feature → AI-ness component ramps. Pivots are set against typical
-    # English news prose (sentence-length CV ≈ 0.5, MATTR-100 ≈ 0.75).
-    likelihood = (
-        _W_STOCK_PHRASES * _ramp(phrase_rate, 0.5, 6.0)
-        + _W_BURSTINESS * _ramp(burstiness, 0.75, 0.25)
-        + _W_DIVERSITY * _ramp(diversity, 0.82, 0.58)
-    )
+    classifier = get_classifier()
+    likelihood: float | None = None
+    model_id: str | None = None
+    if classifier is not None:
+        likelihood = round(classifier.predict_proba(text), 4)
+        model_id = classifier.model_id
 
     return AITextMetrics(
-        ai_likelihood=round(likelihood, 4),
-        burstiness=round(burstiness, 4),
-        lexical_diversity=round(diversity, 4),
-        stock_phrases_per_1k=round(phrase_rate, 4),
+        ai_likelihood=likelihood,
+        model_id=model_id,
+        burstiness=round(_burstiness([len(s) for s in sentences]), 4),
+        lexical_diversity=round(_moving_ttr(words), 4),
         word_count=word_count,
         reliable=(
             word_count >= MIN_RELIABLE_WORDS

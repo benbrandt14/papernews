@@ -205,9 +205,23 @@ def _doc(source_id: str, body: str, category: str = "Sci") -> RawDocument:
     )
 
 
-def test_ai_derank_sinks_flagged_docs():
-    """A stock-phrase-laden doc gets the penalty and sorts below clean docs,
-    so the category budget cuts it first."""
+def test_ai_derank_observe_only_without_model(monkeypatch):
+    """No trained artifact installed: metrics attach but nothing deranks —
+    the screen acts on the classifier's score or not at all."""
+    monkeypatch.delenv("PAPERNEWS_AI_MODEL", raising=False)
+    func = getattr(triage_process_b5_ai_derank, "fn", triage_process_b5_ai_derank)
+    docs = [_doc("slop", _SLOP_BODY), _doc("h1", _HUMAN_BODY)]
+    result, deranked, dropped = func(docs, Preferences(ai_drop_threshold=0.1))
+    assert (deranked, dropped) == (0, 0)
+    assert [d.source_id for d in result] == ["slop", "h1"]
+    assert all(d.ai_metrics is not None for d in result)
+    assert all(d.ai_metrics.ai_likelihood is None for d in result)
+    assert all(d.heuristic_score == 3 for d in result)
+
+
+def test_ai_derank_sinks_flagged_docs(ai_classifier_env):
+    """A doc the classifier flags gets the penalty and sorts below clean
+    docs, so the category budget cuts it first."""
     func = getattr(triage_process_b5_ai_derank, "fn", triage_process_b5_ai_derank)
     docs = [_doc("slop", _SLOP_BODY), _doc("h1", _HUMAN_BODY), _doc("h2", _HUMAN_BODY)]
 
@@ -226,7 +240,7 @@ def test_ai_derank_sinks_flagged_docs():
     assert [d.source_id for d in surviving] == ["h1", "h2"]
 
 
-def test_ai_derank_disabled_is_a_noop():
+def test_ai_derank_disabled_is_a_noop(ai_classifier_env):
     func = getattr(triage_process_b5_ai_derank, "fn", triage_process_b5_ai_derank)
     docs = [_doc("slop", _SLOP_BODY)]
     result, deranked, dropped = func(docs, Preferences(ai_detection_enabled=False))
@@ -235,7 +249,7 @@ def test_ai_derank_disabled_is_a_noop():
     assert result[0].ai_metrics is None
 
 
-def test_ai_derank_hard_drop_threshold():
+def test_ai_derank_hard_drop_threshold(ai_classifier_env):
     func = getattr(triage_process_b5_ai_derank, "fn", triage_process_b5_ai_derank)
     docs = [_doc("slop", _SLOP_BODY), _doc("h1", _HUMAN_BODY)]
     result, deranked, dropped = func(docs, Preferences(ai_drop_threshold=0.6))
@@ -244,10 +258,10 @@ def test_ai_derank_hard_drop_threshold():
     assert [d.source_id for d in result] == ["h1"]
 
 
-def test_ai_derank_never_penalizes_short_docs():
+def test_ai_derank_never_penalizes_short_docs(ai_classifier_env):
     """Unreliable (short) samples keep their rank — metrics attach, no verdict."""
     func = getattr(triage_process_b5_ai_derank, "fn", triage_process_b5_ai_derank)
-    doc = _doc("tiny", "A tapestry of game-changers. Delve in.")
+    doc = _doc("tiny", "A tapestry of game-changers in a fast-paced world.")
     result, deranked, dropped = func([doc], Preferences(ai_drop_threshold=0.1))
     assert (deranked, dropped) == (0, 0)
     assert result[0].heuristic_score == 3
@@ -255,7 +269,7 @@ def test_ai_derank_never_penalizes_short_docs():
     assert result[0].ai_metrics.reliable is False
 
 
-def test_ai_derank_does_not_mutate_inputs():
+def test_ai_derank_does_not_mutate_inputs(ai_classifier_env):
     func = getattr(triage_process_b5_ai_derank, "fn", triage_process_b5_ai_derank)
     doc = _doc("slop", _SLOP_BODY)
     result, _, _ = func([doc], Preferences())
@@ -264,7 +278,7 @@ def test_ai_derank_does_not_mutate_inputs():
     assert doc.ai_metrics is None
 
 
-def test_ai_derank_configurable_threshold_and_penalty():
+def test_ai_derank_configurable_threshold_and_penalty(ai_classifier_env):
     func = getattr(triage_process_b5_ai_derank, "fn", triage_process_b5_ai_derank)
     docs = [_doc("h1", _HUMAN_BODY)]
     # A hair-trigger threshold flags even clean human prose…

@@ -163,11 +163,22 @@ def test_build_pdf_renders_stylometrics_footer(tmp_path):
         url="https://example.com/scored",
         ai_metrics=AITextMetrics(
             ai_likelihood=0.72,
+            model_id="svc-char24-en-20k",
             burstiness=0.31,
             lexical_diversity=0.66,
-            stock_phrases_per_1k=4.2,
             word_count=850,
             reliable=True,
+        ),
+    )
+    modelless = ArticleChunk(
+        category="Science",
+        source="example.com",
+        title="A Modelless Story",
+        summary="Summary.",
+        body_markdown="Body.",
+        url="https://example.com/modelless",
+        ai_metrics=AITextMetrics(
+            burstiness=0.52, lexical_diversity=0.78, word_count=400, reliable=True
         ),
     )
     tiny = ArticleChunk(
@@ -188,12 +199,12 @@ def test_build_pdf_renders_stylometrics_footer(tmp_path):
         url="https://example.com/unscored",
     )
     ctx = _ctx(
-        articles=[scored, tiny, unscored],
+        articles=[scored, modelless, tiny, unscored],
         stats=FunnelStats(
             ingested=10,
             after_filter=8,
             after_budget=4,
-            selected=3,
+            selected=4,
             ai_deranked=2,
             ai_dropped=1,
         ),
@@ -202,15 +213,17 @@ def test_build_pdf_renders_stylometrics_footer(tmp_path):
     assert pdf.exists()
     typ = (tmp_path / ".build" / "2026-01-01.typ").read_text()
 
-    # Scored article: the full metric line.
+    # Scored article: the full metric line with model provenance.
     assert "AI-likeness 72%" in typ
     assert "burstiness 0.31" in typ
     assert "lexical diversity 0.66" in typ
-    assert "stock phrases 4.2" in typ
+    assert "model svc-char24-en-20k" in typ
+    # No classifier installed: descriptive stats only, honestly labeled.
+    assert "no classifier trained" in typ
     # Unreliable article: honesty over fake precision.
     assert "too short to profile" in typ
-    # Exactly two footers: the unscored article renders none.
-    assert typ.count("#upper[Stylometrics]") == 2
+    # Exactly three footers: the unscored article renders none.
+    assert typ.count("#upper[Stylometrics]") == 3
     # The funnel fine print carries the screen's counts.
     assert "2 deranked, 1 dropped by the AI-likeness screen" in typ
 

@@ -138,9 +138,11 @@ def triage_process_b5_ai_derank(
 
     Runs between local ranking (2B) and the category budget (2C) so that
     flagged documents fall below the budget cut line instead of costing
-    LLM tokens. Scoring (papernews.ai_detect, adapted from
-    lyc8503/AITextDetector) is deterministic and local; metrics attach to
-    every surviving document so the renderer can print them per article.
+    LLM tokens. Scoring (papernews.ai_detect — the lyc8503/AITextDetector
+    architecture with an English-trained model) is deterministic and
+    local; metrics attach to every surviving document so the renderer can
+    print them per article. Without a trained model artifact the screen
+    observes only: stylometrics attach, nothing is deranked.
 
     Returns (documents, deranked_count, dropped_count).
     """
@@ -153,7 +155,7 @@ def triage_process_b5_ai_derank(
     for doc in documents:
         metrics = score_text(doc.raw_text)
         update: dict = {"ai_metrics": metrics}
-        if metrics.reliable:
+        if metrics.reliable and metrics.ai_likelihood is not None:
             if (
                 prefs.ai_drop_threshold is not None
                 and metrics.ai_likelihood >= prefs.ai_drop_threshold

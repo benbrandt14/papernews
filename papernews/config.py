@@ -103,6 +103,9 @@ class Settings(BaseSettings):
     config: Path = Path("sources.toml")
     output: Path = Path("output")
     state: Path = Path("data/state.db")
+    # AI-likeness classifier artifact; None means the packaged default
+    # (papernews/ai_model.json.gz). Train one with scripts/train_ai_classifier.py.
+    ai_model: Path | None = None
     llm_enabled: bool = False
     # Provider preset name (see backends.PROVIDERS), e.g. "deepseek",
     # "openrouter", "local". Switching providers is a one-env-var change.

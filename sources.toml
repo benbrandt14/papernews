@@ -151,7 +151,9 @@ interest = ["Articles with technical depth and novelty", "Articles with a unique
 disinterest = ["sensationalism and repetitive verbosity","local announcements or updates not directed to a general audience"]
 
 # --- AI-likeness screen (triage Stage 2B.5) — deterministic, zero API cost.
-# Deranks statistically AI-flavored articles below the category-budget cut.
+# A trained classifier (papernews/ai_model.json.gz, see
+# scripts/train_ai_classifier.py) deranks machine-flavored articles below
+# the category-budget cut; without a trained artifact it only observes.
 # These are the defaults; uncomment to tune.
 # ai_detection_enabled = true
 # ai_derank_threshold = 0.6   # ai_likelihood >= this adds the penalty below
