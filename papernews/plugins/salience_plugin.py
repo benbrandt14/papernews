@@ -38,7 +38,9 @@ MIN_SENTENCE_CHARS = 25
 # a few signposts, not a highlighter dragged over the whole page.
 HIGH_FRAC = 0.10
 LOW_FRAC = 0.20
-# Weights map to the emitter's smart-sentence buckets (>=0.75 bold, <=0.25 fade).
+# Weights map to the emitter's smart-sentence buckets (>=0.6 semibold,
+# <=0.25 fade) — HIGH_WEIGHT must clear the semibold threshold or promotion
+# is a visual no-op.
 HIGH_WEIGHT = 0.65
 LOW_WEIGHT = 0.25
 

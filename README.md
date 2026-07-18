@@ -179,6 +179,11 @@ Everything visual lives in one file: [`papernews/template.typ.j2`](papernews/tem
   New Computer Modern (bundled with the Typst compiler)
 - Two-column body for any article over 2000 characters; single-column
   otherwise
+- Everything is tuned for B/W e-ink: article images are converted to
+  grayscale (alpha flattened onto white, mild autocontrast, downscaled to
+  the page's ~2400px width), text grays never drop below 35% luma, rules
+  never go thinner than 0.5pt, and external links in article bodies carry
+  a faint underline so tappable text is discoverable
 - First-line paragraph indent instead of vertical parskip (classic
   magazine convention)
 - All vertical spacing derives from one rhythm unit (`u`)

@@ -15,11 +15,12 @@ content-addressed assets scheme as the legacy path.
 from __future__ import annotations
 
 import hashlib
+import io
 import sys
 import urllib.request
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from papernews.models import Block, ImageRef, Span
 from papernews.render import typst_escape, typst_url
@@ -35,10 +36,13 @@ def _render_code_block(code: str) -> str:
 
 # Typst helpers the emitter's output relies on. The template preamble must
 # include this (tests prepend it before compiling emitted fragments).
+# Thresholds mirror template.typ.j2's smart-sentence: semibold at >= 0.6
+# (below the salience plugin's HIGH_WEIGHT so promotions actually bold),
+# fade capped at luma(35%) for e-ink legibility. Keep the two in sync.
 PREAMBLE = """
 #let smart-sentence(weight: 1.0, body) = {
-  if weight >= 0.75 { text(weight: "semibold", body) }
-  else if weight <= 0.25 { text(fill: luma(40%), body) }
+  if weight >= 0.6 { text(weight: "semibold", body) }
+  else if weight <= 0.25 { text(fill: luma(35%), body) }
   else { body }
 }
 """
@@ -182,6 +186,50 @@ def _emit_span(text: str, span: Span, children: list[Span]) -> str:
 
 # --- Images -----------------------------------------------------------------
 
+# The Boox page is ~2400px wide at its ~300dpi; larger rasters only bloat
+# the PDF and slow the panel refresh.
+_MAX_EDGE_PX = 2400
+
+
+def _eink_process(data: bytes, ext: str) -> tuple[bytes, str]:
+    """Convert a raster image to e-ink-friendly grayscale.
+
+    Alpha flattens onto white (e-ink has no transparency, and PIL would
+    otherwise blend it onto black), tones spread with a mild autocontrast,
+    and anything wider than the page's pixel width downscales. Photographic
+    sources (jpeg/webp) re-encode as JPEG; png/gif (line art, screenshots,
+    diagrams) as PNG so compression artifacts don't smear sharp edges.
+    Any failure returns the original bytes untouched — a color image beats
+    a missing one. SVG passes through: Typst rasterizes it at compile time
+    and the B/W page styling already applies.
+    """
+    if ext == ".svg":
+        return data, ext
+    try:
+        with Image.open(io.BytesIO(data)) as opened:
+            opened.load()  # animated GIF/WebP: first frame only
+            img: Image.Image = opened
+            if img.mode in ("RGBA", "LA", "PA") or (
+                img.mode == "P" and "transparency" in img.info
+            ):
+                rgba = img.convert("RGBA")
+                white = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+                img = Image.alpha_composite(white, rgba)
+            gray = ImageOps.autocontrast(img.convert("L"), cutoff=1)
+        if max(gray.size) > _MAX_EDGE_PX:
+            gray.thumbnail((_MAX_EDGE_PX, _MAX_EDGE_PX), Image.Resampling.LANCZOS)
+        buf = io.BytesIO()
+        if ext in (".jpg", ".webp"):
+            gray.save(buf, format="JPEG", quality=85, optimize=True)
+            return buf.getvalue(), ".jpg"
+        gray.save(buf, format="PNG", optimize=True)
+        return buf.getvalue(), ".png"
+    except Exception as e:
+        sys.stderr.write(
+            f"  [warn] grayscale conversion failed, keeping original: {e}\n"
+        )
+        return data, ext
+
 
 def _fetch_image(ref: ImageRef, assets_dir: Path) -> Path | None:
     """Download (or reuse) one image; returns the local path or None."""
@@ -218,6 +266,7 @@ def _fetch_image(ref: ImageRef, assets_dir: Path) -> Path | None:
                 if not ext:
                     raise ValueError(f"Unrecognized image content-type: {ctype}")
 
+            data, ext = _eink_process(data, ext)
             img_path = assets_dir / f"{url_hash}{ext}"
             img_path.write_bytes(data)
             return img_path

@@ -335,21 +335,23 @@ _LANDING_HTML = """<!doctype html>
   <title>papernews</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
+    /* Monochrome palette, tuned for the device's e-ink browser: pure black
+       ink, grays no lighter than #555, crisp borders instead of shadows. */
     body { font-family: Georgia, "Times New Roman", serif; max-width: 720px;
-           margin: 4rem auto; padding: 0 1.25rem; color: #222; }
+           margin: 4rem auto; padding: 0 1.25rem; color: #000; background: #fff; }
     h1   { font-size: 2.4rem; margin: 0 0 0.2rem; }
-    .sub { color: #777; margin: 0 0 2rem; font-size: 1rem; }
+    .sub { color: #444; margin: 0 0 2rem; font-size: 1rem; }
     .row { display: flex; gap: 0.8rem; flex-wrap: wrap; margin-top: 1rem; }
     a.cta, button.cta {
-            display: inline-block; padding: 0.7rem 1.4rem; border: 1px solid #222;
-            text-decoration: none; color: #222; font-weight: bold;
+            display: inline-block; padding: 0.7rem 1.4rem; border: 2px solid #000;
+            text-decoration: none; color: #000; font-weight: bold;
             background: #fff; font-family: inherit; font-size: 1rem; cursor: pointer; }
-    a.cta:hover, button.cta:hover { background: #222; color: #fff; }
-    button.cta:disabled { opacity: 0.5; cursor: wait; }
-    img.cover { width: 100%; height: auto; border: 1px solid #eee;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
-    .meta { color: #999; font-size: 0.85rem; margin-top: 3rem; }
-    #status { color: #777; font-size: 0.9rem; margin-top: 0.8rem; min-height: 1.2em; }
+    a.cta:hover, button.cta:hover { background: #000; color: #fff; }
+    button.cta:disabled { color: #555; border-color: #555; cursor: wait; }
+    img.cover { width: 100%; height: auto; border: 1px solid #555; }
+    .meta { color: #555; font-size: 0.85rem; margin-top: 3rem; }
+    .meta a { color: #000; }
+    #status { color: #000; font-size: 0.9rem; margin-top: 0.8rem; min-height: 1.2em; }
   </style>
 </head>
 <body>
@@ -399,24 +401,26 @@ _EDITOR_HTML = """<!doctype html>
   <title>papernews — edit sources</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
+    /* Monochrome like the landing page: outcome is signalled by ✓/✗ glyphs
+       and weight, never by hue — green vs red is invisible on B/W e-ink. */
     body { font-family: Georgia, "Times New Roman", serif; max-width: 860px;
-           margin: 3rem auto; padding: 0 1.25rem; color: #222; }
+           margin: 3rem auto; padding: 0 1.25rem; color: #000; background: #fff; }
     h1   { font-size: 1.8rem; margin: 0 0 0.2rem; }
-    .sub { color: #777; margin: 0 0 1.5rem; font-size: 0.95rem; }
+    .sub { color: #444; margin: 0 0 1.5rem; font-size: 0.95rem; }
     textarea { width: 100%; height: 60vh; font-family: ui-monospace, Menlo, Consolas,
-               monospace; font-size: 0.85rem; border: 1px solid #ccc;
-               padding: 0.8rem; box-sizing: border-box; }
+               monospace; font-size: 0.85rem; border: 1px solid #555;
+               padding: 0.8rem; box-sizing: border-box; color: #000; background: #fff; }
     .row { display: flex; gap: 0.8rem; flex-wrap: wrap; margin-top: 1rem; }
     button.cta, a.cta {
-            display: inline-block; padding: 0.6rem 1.2rem; border: 1px solid #222;
-            color: #222; font-weight: bold; background: #fff; text-decoration: none;
+            display: inline-block; padding: 0.6rem 1.2rem; border: 2px solid #000;
+            color: #000; font-weight: bold; background: #fff; text-decoration: none;
             font-family: inherit; font-size: 0.95rem; cursor: pointer; }
-    button.cta:hover, a.cta:hover { background: #222; color: #fff; }
-    button.cta:disabled { opacity: 0.5; cursor: wait; }
+    button.cta:hover, a.cta:hover { background: #000; color: #fff; }
+    button.cta:disabled { color: #555; border-color: #555; cursor: wait; }
     #status { margin-top: 1rem; font-size: 0.9rem; white-space: pre-wrap;
-              font-family: ui-monospace, Menlo, Consolas, monospace; }
-    #status.ok { color: #2a6f2a; }
-    #status.err { color: #a33; }
+              font-family: ui-monospace, Menlo, Consolas, monospace; color: #000; }
+    #status.ok { font-weight: bold; }
+    #status.err { font-weight: bold; text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -447,15 +451,15 @@ _EDITOR_HTML = """<!doctype html>
         const b = await r.json();
         if (r.ok) {
           status.className = 'ok';
-          status.textContent = 'Saved (' + b.sources + ' sources)'
+          status.textContent = '\\u2713 Saved (' + b.sources + ' sources)'
             + (b.rebuild ? ' — rebuild ' + b.rebuild : '');
         } else {
           status.className = 'err';
-          status.textContent = b.error || 'Save failed';
+          status.textContent = '\\u2717 ' + (b.error || 'Save failed');
         }
       } catch (e) {
         status.className = 'err';
-        status.textContent = 'Save failed: ' + e;
+        status.textContent = '\\u2717 Save failed: ' + e;
       } finally {
         btns.forEach(b => b.disabled = false);
       }

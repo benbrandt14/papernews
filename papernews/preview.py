@@ -24,6 +24,9 @@ def render_cover_png(pdf: Path, out_png: Path, dpi: int = 180) -> Path:
             "-r",
             str(dpi),
             "-png",
+            # Grayscale: the preview should show what the e-ink panel will,
+            # not a color rendition the device can't reproduce.
+            "-gray",
             str(pdf),
             prefix,
         ],
