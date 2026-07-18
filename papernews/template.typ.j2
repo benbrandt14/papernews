@@ -37,12 +37,24 @@
 )
 
 // Salience weighting (structured-IR bodies): high-salience sentences get
-// a heavier weight, boilerplate fades toward grey. E-Ink safe: never
-// lighter than 40% luma.
+// a heavier weight, boilerplate fades toward grey. E-Ink safe: the fade
+// never drops below 35% luma, and the semibold threshold (0.6) sits under
+// the salience plugin's HIGH_WEIGHT=0.65 so promotions are actually visible.
+// Mirrored in typst_emit.PREAMBLE — keep the two in sync.
 #let smart-sentence(weight: 1.0, body) = {
-  if weight >= 0.75 { text(weight: "semibold", body) }
-  else if weight <= 0.25 { text(fill: luma(40%), body) }
+  if weight >= 0.6 { text(weight: "semibold", body) }
+  else if weight <= 0.25 { text(fill: luma(35%), body) }
   else { body }
+}
+
+// External links in article bodies get a faint underline so tappable text
+// is discoverable on the device; internal cross-references (label dests on
+// the cover and index) stay unmarked. Applied around body content only.
+#let bodylinks(content) = {
+  show link: it => if type(it.dest) == str {
+    underline(stroke: 0.5pt + luma(40%), offset: 1.5pt, evade: true, it)
+  } else { it }
+  content
 }
 
 // --- Type system ------------------------------------------------------------
@@ -73,7 +85,8 @@
   v(0.5 * u)
   text(style: "italic", size: 10pt, content)
   v(0.8 * u)
-  line(length: 100%, stroke: 0.4pt)
+  // 0.5pt floor: thinner hairlines can drop out entirely on e-ink panels.
+  line(length: 100%, stroke: 0.5pt)
   v(0.8 * u)
 }
 
@@ -232,8 +245,10 @@
       column-gutter: 0.8em,
       align: (left + horizon, left + horizon, right + horizon),
       text(font: sans, size: 7pt, tracking: 0.08em, upper(label)),
-      box(width: 100%, height: 5pt, fill: luma(92%), radius: 1pt)[
-        #box(width: frac * 100%, height: 5pt, fill: luma(30%), radius: 1pt)
+      // Solid black bar on a mid-gray track: luma(92%) reads as blank on a
+      // 16-level e-ink panel, and a light bar fill loses the comparison.
+      box(width: 100%, height: 5pt, fill: luma(85%), radius: 1pt)[
+        #box(width: frac * 100%, height: 5pt, fill: black, radius: 1pt)
       ],
       text(font: sans, size: 8pt, weight: 600, str(count)),
     )
@@ -246,7 +261,8 @@
   #v(0.35 * u)
   #row("Typeset", ((( stats.selected ))), ((( stats.ingested ))))
   #v(0.4 * u)
-  #text(font: sans, size: 7pt, fill: luma(45%))[
+  // 7pt is already the de-emphasis; graying it too would sink it on e-ink.
+  #text(font: sans, size: 7pt)[
     ((( stats.ingested - stats.after_filter ))) dropped by deterministic filters
     #sym.dot.c ((( stats.after_filter - stats.after_budget ))) over category budgets
     #sym.dot.c ((( stats.after_budget - stats.selected ))) declined by the gatekeeper
@@ -259,7 +275,7 @@
 
 // --- Curiosity box: questions the paper raised earlier and has now answered ----
 ((* if decorations.curiosities *))
-#block(breakable: false, width: 100%, inset: (x: 0.9em, y: 0.8em), stroke: 0.75pt + luma(30%), radius: 2pt)[
+#block(breakable: false, width: 100%, inset: (x: 0.9em, y: 0.8em), stroke: 0.75pt, radius: 2pt)[
   #kicker[Answered from the queue]
   #v(0.5 * u)
   ((* for c in decorations.curiosities *))
@@ -286,7 +302,7 @@
     #block(breakable: false)[
       #text(size: 9.5pt)[#link(<art((( loop.index )))>)[((( art.title | typst )))]] #h(1fr) #text(font: sans, size: 7.5pt)[p. #context locate(<art((( loop.index )))>).page()] \
       #v(0.15 * u)
-      #text(font: sans, size: 7pt, tracking: 0.06em, fill: luma(40%))[#upper[((( art.source | typst )))]]((* if art.summary *)) #text(size: 8.5pt, style: "italic", fill: luma(30%))[ — ((( art.summary | truncate(90) | typst )))]((* endif *))
+      #text(font: sans, size: 7pt, tracking: 0.06em)[#upper[((( art.source | typst )))]]((* if art.summary *)) #text(size: 8.5pt, style: "italic", fill: luma(30%))[ — ((( art.summary | truncate(90) | typst )))]((* endif *))
     ]
     #v(0.6 * u)
   ((* endfor *))
@@ -329,16 +345,20 @@
   ((* endif *))
 
   // Source line: the category is the section header, so show provenance here
-  #kicker[((( art.category | typst )))] #sym.dot.c #text(font: sans, size: 8.5pt, weight: 600)[((( art.source | typst )))]((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")[((( art.date | typst )))]((* endif *)) #h(1fr) #text(font: sans, size: 7.5pt, fill: luma(45%))[((( art.telemetry.formatted_tokens ))) tokens #sym.dot.c ((( art.telemetry.formatted_cost )))¢]
+  #kicker[((( art.category | typst )))] #sym.dot.c #text(font: sans, size: 8.5pt, weight: 600)[((( art.source | typst )))]((* if art.date *)) #sym.dot.c #text(size: 9pt, style: "italic")[((( art.date | typst )))]((* endif *)) #h(1fr) #text(font: sans, size: 7.5pt, fill: luma(30%))[((( art.telemetry.formatted_tokens ))) tokens #sym.dot.c ((( art.telemetry.formatted_cost )))¢]
   #articletitle("((( art.url | typst_url )))", [((( art.title | typst )))]) <art((( loop.index )))>
   #articlelede([((( art.summary | typst )))])
 
   ((* if art.body_markdown | length > 2000 *))
     #columns(2, gutter: 1.5em)[
-      ((( art.body_typst )))
+      #bodylinks[
+        ((( art.body_typst )))
+      ]
     ]
   ((* else *))
-    ((( art.body_typst )))
+    #bodylinks[
+      ((( art.body_typst )))
+    ]
   ((* endif *))
 
   // Force long articles to break to a new page so the next article starts fresh
