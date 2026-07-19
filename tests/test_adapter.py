@@ -52,7 +52,7 @@ def test_article_to_dict_conversion():
     assert "telemetry" in data
     assert data["telemetry"]["prompt_tokens"] == 1500
     assert data["telemetry"]["output_tokens"] == 500
-    assert data["telemetry"]["formatted_tokens"] == "2.0k"
+    assert data["telemetry"]["formatted_tokens"] == "^3.3"  # mag notation
 
     # Cost is derived from the provider price constants; assert the formatting
     # logic rather than a provider-specific number.
@@ -130,5 +130,5 @@ def test_render_context_to_template_vars():
     # Articles are dicts with the telemetry @property fields injected
     art = variables["articles"][0]
     assert art["title"] == "Title"
-    assert art["telemetry"]["formatted_tokens"] == "0.0k"
+    assert art["telemetry"]["formatted_tokens"] == "^1.2"  # mag notation
     assert "formatted_cost" in art["telemetry"]

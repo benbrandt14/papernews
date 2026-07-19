@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from papernews.mag import format_mag
+
 # Approximate pricing ($ per 1M tokens) for the default provider (DeepSeek
 # deepseek-chat, cache-miss rates). Token counts come from the API and are
 # exact; only this cost estimate is provider-dependent — edit if you switch.
@@ -75,9 +77,8 @@ class Telemetry(BaseModel):
 
     @property
     def formatted_tokens(self) -> str:
-        if self.total_tokens == 0:
-            return "0"
-        return f"{self.total_tokens / 1000:.1f}k"
+        # Mag notation (^magnitude): ~45k tokens reads ^4.7.
+        return format_mag(self.total_tokens)
 
     @property
     def formatted_cost(self) -> str:
@@ -125,11 +126,18 @@ class Span(BaseModel):
     start: int
     end: int
     kind: Literal[
-        "strong", "emph", "link", "code_inline", "math_inline", "entity", "salience"
+        "strong",
+        "emph",
+        "link",
+        "code_inline",
+        "math_inline",
+        "entity",
+        "salience",
+        "mag",
     ]
     weight: float | None = None  # salience 0..1 → font weight/luma bucket
     href: str | None = None  # link URL, or "#label" for internal targets
-    label: str | None = None  # entity id / Typst label
+    label: str | None = None  # entity id / Typst label / mag gloss text
 
 
 class ImageRef(BaseModel):

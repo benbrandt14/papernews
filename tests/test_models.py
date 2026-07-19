@@ -1,6 +1,7 @@
 from hypothesis import given
 from hypothesis import strategies as st
 
+from papernews.mag import format_mag
 from papernews.models import Annotation, ArticleChunk, Telemetry
 
 
@@ -11,9 +12,8 @@ from papernews.models import Annotation, ArticleChunk, Telemetry
 def test_telemetry_property(prompt_tokens, output_tokens):
     t1 = Telemetry(prompt_tokens=prompt_tokens, output_tokens=output_tokens)
     assert t1.total_tokens == prompt_tokens + output_tokens
-    assert t1.formatted_tokens == (
-        f"{t1.total_tokens / 1000:.1f}k" if t1.total_tokens > 0 else "0"
-    )
+    # Token counts render in mag notation (^magnitude).
+    assert t1.formatted_tokens == format_mag(t1.total_tokens)
 
     t2 = Telemetry(prompt_tokens=100, output_tokens=100)
     t3 = t1 + t2

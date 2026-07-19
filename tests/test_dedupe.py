@@ -138,3 +138,104 @@ def test_unrendered_articles_stay_eligible(store):
 
     dedupe(docs, store=store)  # processed, but no edition recorded (render failed)
     assert len(dedupe(docs, store=store)) == 1  # still eligible next run
+
+
+# --- Hardened matching: URL variants, titles, within-run duplicates ----------
+
+
+def test_within_run_duplicates_collapse(store):
+    """Two sources carrying the same story in one run must yield one article.
+
+    The kept occurrence is the first (documents arrive rank-sorted).
+    """
+    dedupe = triage_process_dedupe.fn
+    docs = [
+        _doc("https://example.com/story", title="A Grand Discovery", score=1),
+        # Same story via an aggregator: tracking params + http + www.
+        _doc(
+            "http://www.example.com/story?utm_source=hn",
+            title="A Grand Discovery",
+            score=3,
+        ),
+        # Different URL entirely, but the identical (normalized) title.
+        _doc("https://mirror.net/12345", title="A grand discovery!", score=3),
+    ]
+    result = dedupe(docs, store=store)
+    assert [d.heuristic_score for d in result] == [1]
+
+
+def test_url_variant_cannot_dodge_typeset_stamp(store):
+    """A re-tagged link to an already-published story stays out."""
+    dedupe = triage_process_dedupe.fn
+    record = stage6_record_edition.fn
+
+    dedupe([_doc("https://example.com/story")], store=store)
+    record([_chunk("https://example.com/story")], "2026-07-18", store=store)
+
+    variant = _doc("http://www.example.com/story/?utm_source=rss&fbclid=x")
+    assert dedupe([variant], store=store) == []
+
+
+def test_same_title_different_url_cannot_dodge_typeset_stamp(store):
+    """Syndicated copies (same story, different host) stay out too."""
+    dedupe = triage_process_dedupe.fn
+    record = stage6_record_edition.fn
+
+    original = _doc("https://example.com/story", title="The Definitive Account")
+    dedupe([original], store=store)
+    record(
+        [
+            ArticleChunk(
+                category="Science",
+                source="example.com",
+                title="The Definitive Account",
+                summary="S",
+                body_markdown="B",
+                url="https://example.com/story",
+            )
+        ],
+        "2026-07-18",
+        store=store,
+    )
+
+    syndicated = _doc("https://mirror.net/999", title="The definitive account")
+    assert dedupe([syndicated], store=store) == []
+
+
+def test_v4_backfill_canonicalizes_existing_rows(tmp_path):
+    """A pre-v4 registry (raw URLs, no title keys) migrates in place: rows
+    are re-keyed canonically and URL-variant twins merge without losing
+    the typeset stamp."""
+    import sqlite3
+
+    db = tmp_path / "state.db"
+    conn = sqlite3.connect(db)
+    # Build a v3 database by hand (migrations 1-3 shipped before title_key).
+    from papernews.store import MIGRATIONS
+
+    for ddl in MIGRATIONS[:3]:
+        conn.executescript(ddl)
+    conn.execute("PRAGMA user_version = 3")
+    conn.execute(
+        "INSERT INTO articles "
+        "(url, title, first_seen_at, last_seen_at, typeset_at, typeset_edition) "
+        "VALUES ('http://www.example.com/story?utm_source=rss', 'The Old Story Returns', "
+        "'t0', 't0', 't1', '2026-07-01')"
+    )
+    conn.execute(
+        "INSERT INTO articles (url, title, first_seen_at, last_seen_at) "
+        "VALUES ('https://example.com/story', 'The Old Story Returns', 't2', 't2')"
+    )
+    conn.commit()
+    conn.close()
+
+    store = SimpleStore(str(db))  # migration 4 + backfill run here
+
+    # The two variants merged into one canonical row that kept the stamp.
+    assert store.typeset_urls(["https://example.com/story"]) == {
+        "https://example.com/story"
+    }
+    with store._connect() as conn:
+        rows = conn.execute("SELECT url, title_key FROM articles").fetchall()
+    assert len(rows) == 1
+    assert rows[0][1] == "the old story returns"

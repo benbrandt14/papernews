@@ -47,6 +47,10 @@
   else { body }
 }
 
+// Mag-notation gloss (magworld.pw): a superscript ^magnitude after big
+// numbers in article bodies. Also mirrored in typst_emit.PREAMBLE.
+#let magnote(m) = [#h(0.1em)#super(text(weight: 600, m))]
+
 // External links in article bodies get a faint underline so tappable text
 // is discoverable on the device; internal cross-references (label dests on
 // the cover and index) stay unmarked. Applied around body content only.
@@ -266,6 +270,7 @@
     ((( stats.ingested - stats.after_filter ))) dropped by deterministic filters
     #sym.dot.c ((( stats.after_filter - stats.after_budget ))) over category budgets
     #sym.dot.c ((( stats.after_budget - stats.selected ))) declined by the gatekeeper
+    #sym.dot.c ^n means 10#super[n] (mag notation)
   ]
 ]
 #v(1.2 * u)

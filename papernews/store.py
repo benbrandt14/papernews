@@ -55,6 +55,16 @@ MIGRATIONS: list[str] = [
     CREATE INDEX IF NOT EXISTS idx_articles_typeset
         ON articles (typeset_at) WHERE typeset_at IS NOT NULL;
     """,
+    # 4: dedupe hardening — registry keys become canonical URLs and gain a
+    # normalized title key, so tracking-param variants and cross-source
+    # syndication of the same story can't dodge the already-typeset check.
+    # Existing rows are rewritten by a Python backfill (see _backfill_v4);
+    # SQL alone can't canonicalize.
+    """
+    ALTER TABLE articles ADD COLUMN title_key TEXT NOT NULL DEFAULT '';
+    CREATE INDEX IF NOT EXISTS idx_articles_title_key
+        ON articles (title_key) WHERE title_key != '';
+    """,
 ]
 
 
@@ -78,6 +88,47 @@ class SimpleStore:
             for version, ddl in enumerate(MIGRATIONS[current:], start=current + 1):
                 conn.executescript(ddl)
                 conn.execute(f"PRAGMA user_version = {version}")
+            conn.commit()
+        if current < 4 <= len(MIGRATIONS):
+            self._backfill_v4()
+
+    def _backfill_v4(self) -> None:
+        """Rewrite pre-v4 registry rows to canonical keys + title keys.
+
+        When two raw URLs collapse to the same canonical key, the rows are
+        merged: the canonical survivor inherits the duplicate's typeset
+        stamp (if it lacks one) so no published article becomes eligible
+        again.
+        """
+        from papernews.dedupe import canonical_url, title_key
+
+        with self._connect() as conn:
+            rows = conn.execute("SELECT url, title FROM articles").fetchall()
+            for url, title in rows:
+                canon = canonical_url(str(url))
+                tkey = title_key(str(title or ""))
+                if canon == url:
+                    conn.execute(
+                        "UPDATE articles SET title_key = ? WHERE url = ?",
+                        (tkey, url),
+                    )
+                    continue
+                try:
+                    conn.execute(
+                        "UPDATE articles SET url = ?, title_key = ? WHERE url = ?",
+                        (canon, tkey, url),
+                    )
+                except sqlite3.IntegrityError:
+                    conn.execute(
+                        "UPDATE articles SET "
+                        "  typeset_at = COALESCE(typeset_at, "
+                        "    (SELECT typeset_at FROM articles WHERE url = ?)), "
+                        "  typeset_edition = COALESCE(typeset_edition, "
+                        "    (SELECT typeset_edition FROM articles WHERE url = ?)) "
+                        "WHERE url = ?",
+                        (url, url, canon),
+                    )
+                    conn.execute("DELETE FROM articles WHERE url = ?", (url,))
             conn.commit()
 
     def schema_version(self) -> int:
@@ -110,26 +161,29 @@ class SimpleStore:
         category: str,
         heuristic_score: int,
         seen_at: str,
+        title_key: str = "",
     ) -> None:
         """Record that triage processed an article on this run.
 
         First sighting sets first_seen_at; later sightings only bump
         last_seen_at/seen_count and refresh the computed attributes
         (title and heuristic score can legitimately change between runs).
+        `url` and `title_key` are expected pre-normalized (dedupe module).
         """
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO articles "
                 "(url, title, category, heuristic_score, first_seen_at, "
-                " last_seen_at, seen_count) "
-                "VALUES (?, ?, ?, ?, ?, ?, 1) "
+                " last_seen_at, seen_count, title_key) "
+                "VALUES (?, ?, ?, ?, ?, ?, 1, ?) "
                 "ON CONFLICT(url) DO UPDATE SET "
                 "  title = excluded.title, "
                 "  category = excluded.category, "
                 "  heuristic_score = excluded.heuristic_score, "
                 "  last_seen_at = excluded.last_seen_at, "
-                "  seen_count = seen_count + 1",
-                (url, title, category, heuristic_score, seen_at, seen_at),
+                "  seen_count = seen_count + 1, "
+                "  title_key = excluded.title_key",
+                (url, title, category, heuristic_score, seen_at, seen_at, title_key),
             )
 
     def typeset_urls(self, urls: list[str]) -> set[str]:
@@ -145,24 +199,56 @@ class SimpleStore:
             ).fetchall()
             return {str(r[0]) for r in rows}
 
-    def mark_typeset(self, urls: list[str], typeset_at: str, edition: str) -> None:
+    def typeset_title_keys(self, title_keys: list[str]) -> set[str]:
+        """The subset of `title_keys` already typeset into a previous edition.
+
+        Empty keys never match — a missing title must not collide with
+        every other missing title.
+        """
+        keys = [k for k in title_keys if k]
+        if not keys:
+            return set()
+        placeholders = ",".join("?" * len(keys))
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT title_key FROM articles "
+                f"WHERE typeset_at IS NOT NULL AND title_key != '' "
+                f"AND title_key IN ({placeholders})",
+                keys,
+            ).fetchall()
+            return {str(r[0]) for r in rows}
+
+    def mark_typeset(
+        self,
+        urls: list[str],
+        typeset_at: str,
+        edition: str,
+        title_keys: list[str] | None = None,
+    ) -> None:
         """Stamp articles as published in an edition. Called only after the
         PDF render succeeded — a failed run must leave articles eligible for
-        the next edition. Already-typeset rows keep their original stamp."""
+        the next edition. Already-typeset rows keep their original stamp.
+        `title_keys`, when given, is parallel to `urls`."""
         if not urls:
             return
+        keys = title_keys if title_keys is not None else [""] * len(urls)
         with self._connect() as conn:
             # Upsert: an article that reached the renderer without passing
             # through triage (e.g. injected by a plugin) still gets stamped.
             conn.executemany(
                 "INSERT INTO articles "
-                "(url, first_seen_at, last_seen_at, typeset_at, typeset_edition) "
-                "VALUES (?, ?, ?, ?, ?) "
+                "(url, first_seen_at, last_seen_at, typeset_at, typeset_edition, "
+                " title_key) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(url) DO UPDATE SET "
                 "  typeset_at = excluded.typeset_at, "
-                "  typeset_edition = excluded.typeset_edition "
+                "  typeset_edition = excluded.typeset_edition, "
+                "  title_key = COALESCE(NULLIF(excluded.title_key, ''), title_key) "
                 "WHERE typeset_at IS NULL",
-                [(url, typeset_at, typeset_at, typeset_at, edition) for url in urls],
+                [
+                    (url, typeset_at, typeset_at, typeset_at, edition, key)
+                    for url, key in zip(urls, keys)
+                ],
             )
 
     # --- Curiosity queue ------------------------------------------------------
