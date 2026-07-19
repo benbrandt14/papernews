@@ -5,7 +5,7 @@ An offline-first, highly customized E-Ink daily digest. A Prefect pipeline pulls
 ## Pipeline Stages
 
 1. **Stage 1: Ingestion** — Dynamically loads plugins (RSS, Hacker News, Wiki). Outputs strict Pydantic `RawDocument` models.
-2. **Stage 2: Filtering** — Enforces deterministic category limits, local ranking heuristics, and regex blacklists natively in Python (zero API cost). An article registry in SQLite records every processed article (URL, computed heuristic score, first-seen timestamp) and drops anything already typeset into a previous edition, so no story ever repeats.
+2. **Stage 2: Filtering** — Enforces deterministic category limits, local ranking heuristics, and regex blacklists natively in Python (zero API cost). An article registry in SQLite records every processed article (canonical URL, normalized title, computed heuristic score, first-seen timestamp) and drops duplicates — within the run, against previous editions, across URL variants (tracking params, http/https, www, trailing slashes), and across syndicated copies with identical titles — so no story ever repeats.
 3. **Stage 3: LLM Handling** — Routes surviving documents to the configured provider (any OpenAI-compatible API; DeepSeek by default, OpenRouter or a local Ollama/vLLM server by env switch) for gatekeeper selection, summarization, and strict markdown formatting. Enforces Pydantic schema validation and tracks token `Telemetry`. Article bodies are parsed into the markdown IR (`Block`/`Span`) here.
 4. **Stage 3.5: Enrichment** — A whole-day, cross-article pass (`enrich_articles` plugins) that attaches sidecar data in place. The **curiosity queue** lives here: it asks the LLM for a few researchable questions per lead story, parks them in SQLite, and resolves *earlier* runs' questions against the OpenAlex corpus — answered pairs surface on the front matter.
 5. **Stage 4: Templating** — The adapter (`adapter.py`) flattens the typed `RenderContext` into the plain dictionaries the template consumes, keeping layout logic strictly decoupled.
@@ -37,6 +37,22 @@ category = "Science"
 
 The file is validated at load time: unknown keys and `[category_limits]`
 entries that don't match any source category are rejected loudly.
+
+## Mag notation
+
+Numbers in the paper use [mag notation](https://magworld.pw/) — a number
+written as its base-10 magnitude behind a `^` sigil (`^3` = 1000, `^3.4` ≈
+2500, `^9.5` ≈ 3.2 billion), rounded to one decimal (~26%, exactly the
+resolution at which orders of magnitude stay honest):
+
+* **Inline glosses** — the `mag_plugin` enrichment pass finds large numbers
+  (≥ 10⁴) in article bodies and typesets a small superscript magnitude after
+  them: *"the project cost \$3.2 billion^9.5"*. Capped at a few per article;
+  numbers inside code and math are left alone. Disable with
+  `PAPERNEWS_DISABLE_PLUGINS=mag_plugin`.
+* **Run telemetry** — token counts on the masthead and per-article source
+  lines render as magnitudes (`^4.7 tokens` instead of `45.2k`).
+* A one-line legend rides the funnel footnote on the index page.
 
 ## Plugins & Hacker News (HN) Fetching
 

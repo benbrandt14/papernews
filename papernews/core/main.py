@@ -13,6 +13,7 @@ from papernews.core.router import (
     llm_select_article,
     llm_summarize_article,
 )
+from papernews.dedupe import canonical_url, title_key
 from papernews.markdown_ir import parse_markdown
 from papernews.models import (
     ArticleChunk,
@@ -133,28 +134,63 @@ def triage_process_b_rank(
 def triage_process_dedupe(
     documents: list[RawDocument], store: SimpleStore | None = None
 ) -> list[RawDocument]:
-    """Drop articles already typeset into a previous edition.
+    """Drop duplicates: within this run, and against previous editions.
+
+    Matching is by canonical URL (tracking params, scheme, www, trailing
+    slashes stripped) OR normalized title, so the same story resurfacing
+    through an aggregator or a re-tagged link can't dodge the registry.
+    Within-run dedupe keeps the first (best-ranked) occurrence.
 
     Runs after ranking (so the recorded heuristic_score is the computed one)
-    and before the category budget (so already-published articles don't eat
-    category slots that fresh ones could fill). Every surviving-to-here doc
-    is recorded with a first_seen_at timestamp on its first sighting; the
-    typeset stamp itself is only written after a successful render.
+    and before the category budget (so duplicates don't eat category slots
+    that fresh articles could fill). Every surviving-to-here doc is recorded
+    with a first_seen_at timestamp on its first sighting; the typeset stamp
+    itself is only written after a successful render.
     """
     store = store or SimpleStore()
     now = datetime.now(UTC).isoformat()
+
+    # Within-run dedupe first: documents arrive rank-sorted, so the kept
+    # occurrence is the best-ranked one.
+    unique: list[RawDocument] = []
+    seen_urls: set[str] = set()
+    seen_titles: set[str] = set()
+    batch_dupes = 0
     for doc in documents:
+        url_key = canonical_url(doc.source_id)
+        t_key = title_key(doc.title)
+        if url_key in seen_urls or (t_key and t_key in seen_titles):
+            batch_dupes += 1
+            continue
+        seen_urls.add(url_key)
+        if t_key:
+            seen_titles.add(t_key)
+        unique.append(doc)
         store.record_processed(
-            url=doc.source_id,
+            url=url_key,
             title=doc.title,
             category=doc.category,
             heuristic_score=doc.heuristic_score,
             seen_at=now,
+            title_key=t_key,
         )
-    already = store.typeset_urls([doc.source_id for doc in documents])
-    fresh = [doc for doc in documents if doc.source_id not in already]
-    if already:
-        print(f"Dedupe: skipped {len(already)} already-typeset article(s).")
+
+    already_urls = store.typeset_urls([canonical_url(d.source_id) for d in unique])
+    already_titles = store.typeset_title_keys([title_key(d.title) for d in unique])
+    fresh = [
+        doc
+        for doc in unique
+        if canonical_url(doc.source_id) not in already_urls
+        and (not title_key(doc.title) or title_key(doc.title) not in already_titles)
+    ]
+
+    skipped = len(documents) - len(fresh)
+    if skipped:
+        print(
+            f"Dedupe: skipped {skipped} duplicate(s) "
+            f"({batch_dupes} within this run, "
+            f"{len(unique) - len(fresh)} already typeset)."
+        )
     return fresh
 
 
@@ -313,9 +349,10 @@ def stage6_record_edition(
     """
     store = store or SimpleStore()
     store.mark_typeset(
-        urls=[a.url for a in articles],
+        urls=[canonical_url(a.url) for a in articles],
         typeset_at=datetime.now(UTC).isoformat(),
         edition=edition,
+        title_keys=[title_key(a.title) for a in articles],
     )
 
 

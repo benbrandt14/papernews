@@ -32,6 +32,7 @@ def get_plugin_manager() -> pluggy.PluginManager:
     from papernews.plugins import (
         curiosity_plugin,
         hn_plugin,
+        mag_plugin,
         rss_plugin,
         salience_plugin,
         wiki_plugin,
@@ -44,6 +45,7 @@ def get_plugin_manager() -> pluggy.PluginManager:
         wiki_plugin,
         curiosity_plugin,
         salience_plugin,
+        mag_plugin,
     ):
         if module.__name__.rsplit(".", 1)[-1] not in disabled:
             pm.register(module)

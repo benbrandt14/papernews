@@ -45,6 +45,7 @@ PREAMBLE = """
   else if weight <= 0.25 { text(fill: luma(35%), body) }
   else { body }
 }
+#let magnote(m) = [#h(0.1em)#super(text(weight: 600, m))]
 """
 
 
@@ -180,6 +181,9 @@ def _emit_span(text: str, span: Span, children: list[Span]) -> str:
     if span.kind == "salience":
         weight = span.weight if span.weight is not None else 1.0
         return f"#smart-sentence(weight: {weight:.2f})[{inner}]/**/"
+    if span.kind == "mag":
+        # Superscript magnitude gloss after the number, e.g. 3.2 billion^9.5.
+        return f'{inner}#magnote("{span.label}")/**/' if span.label else inner
 
     return inner
 
